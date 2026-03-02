@@ -1,0 +1,1 @@
+Dataset-specific notes documenting how general scripts were applied in particular analyses (e.g., 2012 corpus, Hip Hop corpus).

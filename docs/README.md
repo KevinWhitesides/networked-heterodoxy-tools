@@ -1,0 +1,1 @@
+Methodological documentation, data format specifications, and conceptual notes supporting the computational pipeline.

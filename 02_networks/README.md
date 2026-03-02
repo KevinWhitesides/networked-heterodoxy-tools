@@ -1,0 +1,1 @@
+Scripts for constructing one-mode and bipartite networks and similarity matrices from binary incidence data.
