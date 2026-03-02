@@ -38,7 +38,7 @@ Excel (`.xlsx`) or CSV formats supported (edit script as needed).
 
 This script prints a summary table to the console **and** writes a timestamped CSV file (saved in the same directory as the script by default) containing:
 
-- `threshold_ge`
+- `threshold`
 - `nodes_surviving`
 - `edges_qualifying`
 - `possible_pairs`
@@ -48,10 +48,7 @@ This makes threshold calibration results easy to archive and cite (e.g., in appe
 
 ### Typical Use
 
-Run prior to building a network intended for Gephi or further metric computation:
-
-```bash
-python diagnose_cooccurrence_thresholds.py
+Run `python diagnose_cooccurrence_thresholds.py` prior to building a projected one-mode network.
 
 Use output to select an edge threshold appropriate for network construction.
 

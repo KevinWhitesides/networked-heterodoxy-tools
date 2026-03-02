@@ -1,0 +1,9 @@
+numpy
+pandas
+openpyxl
+networkx
+scipy
+scikit-learn
+matplotlib
+gensim
+pyLDAvis

@@ -86,7 +86,7 @@ def main() -> None:
 
         rows.append(
             {
-                "threshold_ge": thr,
+                "threshold": thr,
                 "nodes_surviving": N,
                 "edges_qualifying": E,
                 "possible_pairs": int(possible_pairs),
@@ -104,7 +104,7 @@ def main() -> None:
     # Pretty print (human-readable)
     print("Thr  Nodes  Edges      PossiblePairs   Density")
     for r in rows:
-        thr = r["threshold_ge"]
+        thr = r["threshold"]
         N = r["nodes_surviving"]
         E = r["edges_qualifying"]
         pp = r["possible_pairs"]
