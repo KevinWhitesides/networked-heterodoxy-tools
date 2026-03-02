@@ -1,71 +1,124 @@
+#!/usr/bin/env python3
 """
-diagnose_cooccurrence_thresholds.py
+Co-occurrence Threshold Diagnostic (Binary Incidence → One-Mode Projection)
 
-Purpose
--------
-Given a "no metadata" incidence matrix (rows = cases; columns = tropes/features)
-with 'X' marking presence and blank marking absence, this script:
+Given a binary incidence matrix (rows = cases; columns = tropes/features) where
+presence is marked with "X" and absence is blank, this script:
 
-1) converts the matrix to binary (X->1, else 0)
-2) computes the trope–trope co-occurrence matrix via projection
-3) prints, for a set of EDGE-WEIGHT thresholds, the resulting:
-   - number of surviving nodes (tropes with >=1 qualifying edge)
-   - number of qualifying edges (unique trope pairs)
-   - total possible pairs among surviving nodes
-   - density (edges / possible pairs)
+1) Binarizes the matrix (X -> 1, else 0)
+2) Computes the one-mode trope–trope co-occurrence matrix via projection
+3) For each EDGE-WEIGHT threshold, reports:
+   - Edges: number of qualifying trope pairs (co-occurrence >= threshold)
+   - Nodes: number of surviving tropes participating in >=1 qualifying edge
+   - PossiblePairs: N*(N-1)/2 among surviving nodes
+   - Density: Edges / PossiblePairs (density among surviving nodes)
+4) Prints the results and saves them to a CSV file for documentation.
 
-Use case
---------
-Pick an edge threshold that yields a Gephi network that is computationally
-manageable and visually interpretable.
-
-Inputs
-------
-- Excel: "full database (no metadata).xlsx" (edit filename as needed)
-  OR
-- CSV:   "full database (no metadata).csv"
-
-Output
-------
-Printed table to the console.
+Notes
+-----
+- Thresholds here are edge-weight thresholds in the projected one-mode network.
+- This diagnostic is intended to help select a manageable, interpretable threshold
+  prior to exporting a graph to Gephi or computing metrics.
 """
 
-import pandas as pd
+from __future__ import annotations
+
+import os
+from datetime import datetime
+from pathlib import Path
+
 import numpy as np
+import pandas as pd
 
-# 1) Load your full “no metadata” sheet (rows = cases; cols = tropes/features)
-df = pd.read_excel("full database (no metadata).xlsx", index_col=None)
-# If you have a CSV instead, use:
-# df = pd.read_csv("full database (no metadata).csv")
 
-# 2) Binarize X → 1, blank → 0
-incidence = (df == "X").astype(int)
+# =========================
+# User settings (edit these)
+# =========================
 
-# 3) Compute the co-occurrence matrix (tropes x tropes)
-cooc = incidence.T.dot(incidence)
+INPUT_PATH = "full database (no metadata).xlsx"  # .xlsx or .csv
+PRESENCE_TOKEN = "X"  # what marks "present" in cells
+THRESHOLDS = [1, 2, 3, 5, 10, 15, 20]  # edge-weight thresholds to evaluate
 
-# 4) Build a strict upper-triangle mask (exclude diagonal/self-pairs)
-n = cooc.shape[0]
-upper_mask = np.triu(np.ones((n, n), dtype=bool), k=1)
+# Output: CSV saved next to this script by default
+OUTPUT_DIR = Path(__file__).resolve().parent
+OUTPUT_BASENAME = "cooccurrence_threshold_diagnostics"  # timestamp will be appended
 
-# 5) Extract raw values once
-vals = cooc.values
 
-print("Thr  Nodes  Edges      PossiblePairs   Density")
-for thr in [1, 2, 3, 5, 10, 15, 20]:
-    # Edges at/above threshold (upper triangle only, to avoid double-counting)
-    edges_upper = (vals >= thr) & upper_mask
-    E = int(edges_upper.sum())
+def load_table(path: str) -> pd.DataFrame:
+    """Load an Excel or CSV file into a DataFrame."""
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"Input file not found: {p.resolve()}")
 
-    # Nodes that participate in at least one qualifying edge
-    # (symmetrize the upper-triangle boolean matrix)
-    edges_sym = edges_upper | edges_upper.T
-    N = int(edges_sym.any(axis=1).sum())
+    suffix = p.suffix.lower()
+    if suffix in [".xlsx", ".xls"]:
+        return pd.read_excel(p, index_col=None)
+    if suffix == ".csv":
+        return pd.read_csv(p)
 
-    # Total possible pairs among the surviving nodes
-    possible_pairs = N * (N - 1) // 2
+    raise ValueError(f"Unsupported input format '{suffix}'. Use .xlsx/.xls or .csv.")
 
-    # Density among surviving nodes (guard against divide-by-zero)
-    density = (E / possible_pairs) if possible_pairs else 0.0
 
-    print(f"≥{thr:>2d}  {N:>5,}  {E:>9,}  {possible_pairs:>13,}  {density:>7.4f}")
+def main() -> None:
+    df = load_table(INPUT_PATH)
+
+    # Binarize presence/absence
+    incidence = (df == PRESENCE_TOKEN).astype(np.int8)
+
+    # Co-occurrence projection: tropes x tropes
+    cooc = incidence.T.dot(incidence)  # diagonal = trope frequency
+
+    n = cooc.shape[0]
+    upper_mask = np.triu(np.ones((n, n), dtype=bool), k=1)
+    vals = cooc.values
+
+    rows = []
+    for thr in THRESHOLDS:
+        edges_upper = (vals >= thr) & upper_mask
+        E = int(edges_upper.sum())
+
+        # Symmetrize to compute node survival
+        edges_sym = edges_upper | edges_upper.T
+        N = int(edges_sym.any(axis=1).sum())
+
+        possible_pairs = N * (N - 1) // 2
+        density = (E / possible_pairs) if possible_pairs else 0.0
+
+        rows.append(
+            {
+                "threshold_ge": thr,
+                "nodes_surviving": N,
+                "edges_qualifying": E,
+                "possible_pairs": int(possible_pairs),
+                "density_surviving_nodes": float(density),
+            }
+        )
+
+    out_df = pd.DataFrame(rows)
+
+    # Print to console
+    print("\nCo-occurrence Threshold Diagnostic")
+    print(f"Input: {Path(INPUT_PATH).resolve()}")
+    print(f"Presence token: {repr(PRESENCE_TOKEN)}\n")
+
+    # Pretty print (human-readable)
+    print("Thr  Nodes  Edges      PossiblePairs   Density")
+    for r in rows:
+        thr = r["threshold_ge"]
+        N = r["nodes_surviving"]
+        E = r["edges_qualifying"]
+        pp = r["possible_pairs"]
+        den = r["density_surviving_nodes"]
+        print(f"≥{thr:>2d}  {N:>5,}  {E:>9,}  {pp:>13,}  {den:>7.4f}")
+
+    # Save CSV
+    ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    out_name = f"{OUTPUT_BASENAME}__{ts}.csv"
+    out_path = OUTPUT_DIR / out_name
+    out_df.to_csv(out_path, index=False)
+
+    print(f"\nSaved CSV: {out_path.resolve()}\n")
+
+
+if __name__ == "__main__":
+    main()
