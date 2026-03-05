@@ -7,3 +7,4 @@ scikit-learn
 matplotlib
 gensim
 pyLDAvis
+seaborn
