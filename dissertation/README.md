@@ -1,8 +1,8 @@
-\# Networked Heterodoxy Dissertation Scripts
+\# Networked Heterodoxy Dissertation Resources
 
 
 
-This repository contains general-purpose scripts used in the computational
+This repository contains general-purpose scripts and other tools used in the computational
 
 analysis for the dissertation \*Networks of Heterodoxy: Shared Dissent and the Dynamics of Counter-Discourse\*.
 
@@ -24,7 +24,7 @@ The scripts are organized by methodological task rather than dataset.
 
 \- \*\*02\_networks/\*\*
 
-  Construction of one-mode and bipartite networks and similarity matrices.
+  Construction of one-mode and bipartite networks, similarity matrices, and networks from topic models.
 
 
 
