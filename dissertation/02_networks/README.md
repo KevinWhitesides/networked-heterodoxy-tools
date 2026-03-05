@@ -94,9 +94,9 @@ By default the script assumes:
 Example structure:
 
 | Source Title | Author | Year | Publisher | Plato | Atlantis | Aztec |
-|--------------|--------|------|-----------|-------|----------|-------|
-| Book A | ... |  ....  | .... |   ......  |   X   |          |   X   |
-| Book B | ... |  ....  | .... |   ......  |       |    X     |   X   |
+|--------------|-------|------|-----------|-------|---------|------|
+| Book A | ... | ... | ... | X | | X |
+| Book B | ... | ... | ... | | X | X |
 
 Configuration variables at the top of the script allow adjustment of:
 
