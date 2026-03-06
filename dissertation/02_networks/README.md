@@ -4,11 +4,14 @@ This folder contains scripts for constructing network graphs from binary inciden
 
 Networks are generated either as:
 
-- Projected one-mode networks (item × item weighted co-occurrence)
-- Bipartite incidence networks (case × item)
-- Topic-derived networks (one-mode & bipartite)
+- **Projected one-mode networks** (feature × feature weighted co-occurrence)
+- **Bipartite incidence networks** (case × feature)
+- **Absence-derived networks**  
+  - case × case significant zero-overlap networks  
+  - case × feature bipartite networks of the retained subset
+- **Topic-derived networks** (one-mode & bipartite)
 
-These scripts assume a cleaned “no metadata” input matrix unless otherwise specified.
+These scripts assume a cleaned “no metadata” and "no totals" input matrix unless otherwise specified.
 
 ---
 
@@ -24,7 +27,7 @@ Constructs a weighted one-mode projection from a binary incidence matrix and exp
 
 - `.xlsx` or `.csv`
 - Rows = cases (e.g., books, songs)
-- Columns = items/tropes
+- Columns = features/tropes
 - Presence marked with `"X"`
 - No totals rows
 - No metadata columns (recommended)
@@ -35,7 +38,7 @@ Optional safeguard: `DROP_COLUMNS = []`
 
 Applies `MIN_NODE_FREQ` (default = 2) prior to projection.
 
-This removes items appearing in fewer than two cases, ensuring recurrence.
+This removes features appearing in fewer than two cases, ensuring recurrence.
 
 #### Edge Thresholds
 
@@ -73,23 +76,23 @@ Multiple thresholded graphs can be produced in a single run.
 
 #### Purpose
 
-Constructs a bipartite (case × item) network directly from a binary incidence matrix and exports it in Gephi-ready format.
+Constructs a bipartite (case × feature) network directly from a binary incidence matrix and exports it in Gephi-ready format.
 
 This preserves the original incidence structure without projecting it into a one-mode co-occurrence network.
 
-The script also produces a pairwise comparison table identifying shared and unshared items between all case pairs.
+The script also produces a pairwise comparison table identifying shared and unshared features between all case pairs.
 
 #### Input
 
 - `.xlsx` or `.csv`
 - Rows = cases (e.g., books, songs)
-- Columns = items/tropes
+- Columns = features (tropes)
 - Presence marked with `"X"`
 
 By default the script assumes:
 
 - The first `N_METADATA_COLS` columns contain metadata
-- Item columns begin immediately afterward
+- Feature columns begin immediately afterward
 
 Example structure:
 
@@ -112,14 +115,14 @@ Exports a GEXF graph:
 
 - Nodes:
   - cases (e.g., books, songs)
-  - items/tropes
+  - features (tropes)
 - Edges:
-  - case–item incidence
+  - case–feature incidence
 - Edge weights: none (binary incidence)
 
 Node attributes include:
 
-- `type` (`case` or `item`)
+- `type` (`case` or `feature`)
 - `bipartite` partition identifier
 
 This network preserves the original dataset structure and can be used for:
@@ -132,10 +135,10 @@ This network preserves the original dataset structure and can be used for:
 
 Exports a CSV listing every case pair with:
 
-- number of shared items
-- list of shared items
-- number of unshared items
-- list of unshared items
+- number of shared features
+- list of shared features
+- number of unshared features
+- list of unshared features
 
 This CSV file is primarily intended as a qualitative aid for exploring specific overlaps between cases.
 
