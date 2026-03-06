@@ -150,5 +150,78 @@ The script will generate:
 - a bipartite `.gexf` network
 - a pairwise overlap `.csv`
 
+### 03_build_absence_networks.py
+
+Constructs network representations of **statistically significant zero-overlap relationships** between cases.
+
+This script is designed to work downstream of the similarity analysis performed by
+`03_similarity/04_significant_zero_overlap.py`. While that script identifies pairs of
+cases that share **no features and whose absence of overlap is unlikely under a
+degree-preserving null model**, the present script converts those results into
+network structures suitable for exploration and visualization.
+
+The script produces two complementary graphs:
+
+1. **Absence graph (case × case)**  
+   - Nodes represent cases (books, songs, etc.).  
+   - Edges represent **statistically significant zero-overlap relationships** between cases.  
+   - The resulting graph provides a quick structural overview of how cases
+     diverge from one another within the dataset.
+
+2. **Bipartite graph of the retained subset (case × feature)**  
+   - Nodes represent both cases and features (tropes).  
+   - Edges represent the presence of a feature in a case.  
+   - Only cases participating meaningfully in the absence structure are retained.
+     Specifically, cases must have at least a configurable number of significant
+     zero-overlap relationships (default: **two**).  
+   - Features are also filtered to those appearing in at least a configurable number of retained cases (default:**two**).
+
+This graph shows the **feature repertoires of the subset of cases that define
+the absence network**, making it possible to see which features cluster within
+different regions of the retained discourse field.
+
+While the absence graph shows **which cases diverge**, the bipartite graph reveals
+**why they diverge** by displaying the feature repertoires that structure those
+differences. In many analyses, the bipartite graph provides the most
+substantively informative representation of the retained discourse field.
+
+---
+
+#### Outputs
+
+The script generates three files:
+
+`absence_graph_sig.gexf`  
+: A case × case network in which edges represent statistically significant
+  zero-overlap relationships.
+
+`bipartite_thr2.gexf`  
+: A bipartite case × feature graph built from the subset of cases retained
+  in the absence network. Features are filtered to those appearing in at least
+  two retained cases in order to reduce noise.
+
+`analysis_summary.txt`  
+: A compact record of the run, including input files, filtering parameters,
+  and network statistics.
+
+---
+
+#### Analytical role
+
+This script forms the **network construction stage** of the absence-analysis
+workflow:
+
+03_similarity/04_significant_zero_overlap.py
+↓
+03_build_absence_networks.py
+
+
+The first script identifies statistically meaningful absence relationships.
+The present script converts those results into network structures that allow
+the retained subset of cases to be explored visually and structurally.
+
+The resulting graphs can be opened directly in **Gephi** or other network
+analysis software for further exploration.
+
 ### build_topic_network.py
 (placeholder)
