@@ -88,7 +88,6 @@ components into reproducible workflows.
 
 [![Networked Heterodoxy Toolkit Pipelines](workflows/pipelines/networked_heterodoxy_pipelines.png)](workflows/pipelines/networked_heterodoxy_pipelines.png)
 
-
 Pipeline implementations are located in:
 
 `workflows/pipelines/`
