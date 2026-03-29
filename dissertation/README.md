@@ -86,7 +86,7 @@ It shows how different analytical components relate to one another.
 This repository includes **pipeline scripts** that combine individual analytical
 components into reproducible workflows.
 
-[![Networked Heterodoxy Toolkit Pipelines](workflows/pipelines/networked_heterodoxy_workflows.png)](workflows/pipelines/networked_heterodoxy_workflows.png)
+[![Networked Heterodoxy Toolkit Pipelines](workflows/pipelines/networked_heterodoxy_pipelines.png)](workflows/pipelines/networked_heterodoxy_pipelines.png)
 
 
 Pipeline implementations are located in:
