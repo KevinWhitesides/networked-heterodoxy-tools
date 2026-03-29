@@ -71,8 +71,6 @@ This will:
 
 ## Toolkit Workflows
 
-## Toolkit Workflows
-
 The diagram below illustrates the **overall analytical workflow structure** of the Networked Heterodoxy toolkit.
 
 It shows how different analytical components relate to one another.  
@@ -86,7 +84,7 @@ It shows how different analytical components relate to one another.
 This repository includes **pipeline scripts** that combine individual analytical
 components into reproducible workflows.
 
-[![Networked Heterodoxy Toolkit Pipelines](workflows/pipelines/networked_heterodoxy_pipelines.png)](workflows/pipelines/networked_heterodoxy_pipelines.png)
+[![Networked Heterodoxy Toolkit Pipelines](workflows/Pipelines/networked_heterodoxy_pipelines.png)](workflows/Pipelines/networked_heterodoxy_pipelines.png)
 
 Pipeline implementations are located in:
 
