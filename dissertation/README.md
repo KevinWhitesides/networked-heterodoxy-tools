@@ -52,7 +52,7 @@ Together these analyses allow researchers to map clusters, boundaries, and conce
 
 The terms below describe the core analytical concepts used throughout the repository.
 
-### Core Data Concepts
+### <u>Core Data Concepts</u>
 
 ### Case
 
@@ -135,7 +135,7 @@ Comparing feature repertoires across cases allows researchers to examine:
 
 ---
 
-### Overlap and Similarity
+### <u>Overlap and Similarity</u>
 
 ### Co-occurrence
 
@@ -196,7 +196,7 @@ These matrices are often used as input for:
 
 ---
 
-### Absence and Disjunction
+### <u>Absence and Disjunction</u>
 
 ### Zero-Overlap Pair
 
@@ -235,7 +235,7 @@ Feature absence analysis identifies feature pairs that are:
 
 ---
 
-### Null Models and Statistical Testing
+### <u>Null Models and Statistical Testing</u>
 
 ### Null Model
 
@@ -288,7 +288,7 @@ Typical flags include:
 
 ---
 
-### Network Structures
+### <u>Network Structures</u>
 
 ### Network (Graph)
 
@@ -340,7 +340,7 @@ The process of converting a bipartite network into a one-mode network.
 
 ---
 
-### Gradient and Mediation Concepts
+### <u>Gradient and Mediation Concepts</u>
 
 ### Case Gradient
 
@@ -396,7 +396,7 @@ Intermediate features create conceptual bridges across otherwise separate discou
 
 ---
 
-### Structural Network Analysis
+### <u>Structural Network Analysis</u>
 
 ### Topological Analysis
 
@@ -447,7 +447,7 @@ Higher effective size indicates stronger brokerage potential.
 
 ---
 
-### Interpretation Concepts
+### <u>Interpretation Concepts</u>
 
 ### Discourse Space (or Field)
 
