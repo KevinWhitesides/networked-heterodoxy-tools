@@ -4,10 +4,43 @@ This module contains scripts, workflows, and documentation developed for computa
 
 *Networks of Heterodoxy: Shared Dissent and the Dynamics of Counter-Discourse* by Kevin Whitesides (2026), University of California, Santa Barbara.
 
-This toolkit analyzes the relational structure of cultural datasets represented as binary case × feature incidence matrices.
+This toolkit operationalizes the concept of networked heterodoxy by modeling cultural datasets as relational structures of similarity, absence, and mediation.
+
+It analyzes the relational structure of cultural datasets represented as binary case × feature incidence matrices.
 It identifies patterns of shared repertoires (similarity), structural disjunctions (absence), and mediated pathways (gradients) between cases and features.
 
 Scripts are organized **by methodological task rather than dataset**, allowing them to be reused across multiple case studies.
+
+---
+
+## Getting Started
+
+To use the scripts and pipelines in this repository, first obtain a local copy.
+
+### Option 1: Clone with Git
+
+    git clone https://github.com/KevinWhitesides/networked-heterodoxy-tools.git
+    cd networked-heterodoxy-tools
+
+### Option 2: Download ZIP
+
+- Click "Code" → "Download ZIP" on GitHub  
+- Extract the folder  
+- Open a terminal in the extracted directory  
+
+---
+
+### Running a pipeline
+
+From the repository root, run:
+
+    python workflows/pipelines/02_jaccard_pipeline.py
+
+This will:
+
+- execute the full pipeline  
+- create a timestamped output directory  
+- generate stage outputs and a pipeline summary  
 
 ---
 
@@ -38,9 +71,38 @@ Scripts are organized **by methodological task rather than dataset**, allowing t
 
 ## Toolkit Workflows
 
-The diagram below illustrates the analytical workflows supported by the Networked Heterodoxy toolkit.
+## Toolkit Workflows
+
+The diagram below illustrates the **overall analytical workflow structure** of the Networked Heterodoxy toolkit.
+
+It shows how different analytical components relate to one another.  
 
 [![Networked Heterodoxy Toolkit Workflows](workflows/networked_heterodoxy_workflows.png)](workflows/networked_heterodoxy_workflows.png)
+
+---
+
+## Pipelines
+
+This repository includes **pipeline scripts** that combine individual analytical
+components into reproducible workflows.
+
+[![Networked Heterodoxy Toolkit Pipelines](workflows/pipelines/networked_heterodoxy_workflows.png)](workflows/pipelines/networked_heterodoxy_workflows.png)
+
+
+Pipeline implementations are located in:
+
+`workflows/pipelines/`
+
+These scripts:
+
+- run multi-stage analyses automatically  
+- organize outputs into structured directories  
+- generate summary files documenting each run  
+
+For details, see:
+
+- `workflows/README.md` — general workflow structure  
+- `workflows/pipelines/README.md` — pipeline-specific documentation  
 
 ---
 

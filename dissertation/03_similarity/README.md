@@ -19,6 +19,11 @@ common analytical workflows:
 Individual scripts can be used independently, but they are also designed to work
 together as components of larger analytical pipelines.
 
+**Pipeline note:** Several scripts in this folder are pipeline-compatible and can
+be used as components in multi-stage workflows. However, pipeline-level usage,
+including runnable pipeline scripts and end-to-end instructions, is documented
+in the `workflows/` directory.
+
 ---
 
 ## Analytical Questions
@@ -65,7 +70,7 @@ shared absences, making it well suited for sparse cultural feature datasets.
 
 ---
 
-### 02_cluster_from_similarity_matrix.py
+### 02_cluster_from_jaccard.py
 
 Performs **hierarchical clustering** on a similarity matrix (such as the output
 of the Jaccard script) in order to identify groups of cases with similar
@@ -80,11 +85,31 @@ The script:
    - by specifying a fixed number of clusters, or
    - by applying a distance threshold.
 5. Exports:
-
    - cluster assignments for each case (CSV)
    - average intra-cluster similarity statistics
    - similarity of each case to the other members of its cluster
    - optional dendrogram visualization
+   
+This script supports two clustering modes:
+
+- **Fixed number of clusters (`N_CLUSTERS`)**  
+  Forces the data into a specified number of clusters (for example, 3).  
+  Use this when you want a consistent number of groups across analyses.
+
+- **Distance cutoff (`DISTANCE_CUTOFF`)**  
+  Cuts the hierarchical clustering tree at a specified distance threshold and
+  allows the number of clusters to emerge automatically.  
+  Use this when you want clusters to reflect a minimum similarity requirement.
+
+For Jaccard-based similarity matrices:
+
+    distance = 1 − similarity
+
+So, for example:
+
+- `DISTANCE_CUTOFF = 0.65` corresponds to a minimum similarity of 0.35
+- Lower cutoffs → more clusters (stricter grouping)
+- Higher cutoffs → fewer clusters (looser grouping)
 
 This script formalizes patterns visible in similarity heatmaps by producing
 explicit **cluster structures** and diagnostic summaries of cluster cohesion.
@@ -370,9 +395,14 @@ of the case × feature matrix.
 Most scripts in this folder assume data structured as a **binary incidence matrix**:
 
 - rows = cases (books, songs, etc.)
-- columns = features/tropes
+- columns = features/tropes (after any metadata columns)
 - presence marked by `"X"`
 - absence left blank
+
+Metadata columns (such as title, author, year, etc.) are allowed at the
+beginning (left) of the spreadsheet. Scripts ignore these columns based on a specified
+`N_METADATA_COLS` parameter, which indicates how many initial columns
+should be treated as metadata rather than features.
 
 Some downstream scripts in this folder also use outputs produced by earlier
 similarity stages, such as:
