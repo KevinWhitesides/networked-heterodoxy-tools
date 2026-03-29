@@ -14,6 +14,8 @@ Scripts are organized **by methodological task rather than dataset**, allowing t
 ## Contents
 
 - [Repository Structure](#repository-structure)
+- [Toolkit Workflows](#toolkit-workflows)
+- [Glossary](#glossary)
 - [Data Format Assumptions](#data-format-assumptions)
 - [Installation](#installation)
 
@@ -22,9 +24,13 @@ Scripts are organized **by methodological task rather than dataset**, allowing t
 ## Repository Structure
 
 - `01_diagnostics/` — Threshold and structural diagnostics for calibrating network construction.
-- `02_networks/` — Construction of one-mode and bipartite networks, similarity matrices, and networks derived from topic models.
-- `03_metrics/` — Network metric analysis including brokerage, centrality, and structural measurements.
-- `04_topic_modeling/` — MALLET pipelines, pyLDAvis visualizations, and topic dendrogram construction.
+- `02_networks/` — Construction of one-mode and bipartite networks derived from binary incidence matrices and topic models.
+- `03_similarity/` — Similarity, non-overlap, and gradient analyses for identifying clusters, boundaries, and mediated pathways within case × feature datasets.
+- `04_topology/` — Structural network analysis, including k-component decomposition and brokerage metrics.
+- `05_distribution/` — Distribution of features across producers within a discourse space, including prominence, diffusion, concentration, and clique identification.
+- `06_topic_modeling/` — MALLET pipelines, pyLDAvis visualizations, and topic dendrogram construction.
+
+
 - `docs/` — Methodological notes, data format specifications, and supporting documentation.
 - `workflows/` — Descriptions of how scripts were applied in specific case studies (e.g., the 2012 literature corpus and the Five Percenter Hip Hop corpus).
 
@@ -46,11 +52,9 @@ Together these analyses allow researchers to map clusters, boundaries, and conce
 
 The terms below describe the core analytical concepts used throughout the repository.
 
----
+### Core Data Concepts
 
-# Core Data Concepts
-
-## Case
+#### Case
 
 The primary unit of analysis in the dataset. A **case** represents an individual cultural artifact or source. Examples include:
 
@@ -65,9 +69,7 @@ The primary unit of analysis in the dataset. A **case** represents an individual
 
 Cases form the **rows** of the dataset’s binary incidence matrix.
 
----
-
-## Feature
+#### Feature
 
 A coded attribute that may appear within cases. *Features* represent elements that can be tagged or identified within cases.  
 In the context of the *networked heterodoxy* project, features are typically referred to as **tropes**. Examples include:
@@ -82,9 +84,7 @@ In the context of the *networked heterodoxy* project, features are typically ref
 
 Features form the **columns** of the binary incidence matrix.
 
----
-
-## Binary Incidence Matrix (Case × Feature)
+#### Binary Incidence Matrix (Case × Feature)
 
 The fundamental data structure used throughout the toolkit.
 
@@ -112,9 +112,7 @@ Absence is encoded as:
 
 This structure forms the foundation for all similarity, absence, and network analyses performed by the scripts.
 
----
-
-## Feature Repertoire
+#### Feature Repertoire
 
 The set of features associated with a particular case.
 
@@ -137,9 +135,9 @@ Comparing feature repertoires across cases allows researchers to examine:
 
 ---
 
-# Overlap and Similarity
+### Overlap and Similarity
 
-## Co-occurrence
+#### Co-occurrence
 
 A relationship in which two **features** appear together in the same case.
 
@@ -149,9 +147,7 @@ If both **Atlantis** and **Plato** appear in a book, those features **co-occur**
 
 Co-occurrence counts are commonly used to construct **feature × feature networks**.
 
----
-
-## Overlap
+#### Overlap
 
 A relationship in which two **cases** share one or more features.
 
@@ -161,9 +157,7 @@ If two books both reference **Atlantis**, they exhibit feature **overlap**.
 
 Overlap forms the basis for most case similarity metrics.
 
----
-
-## Jaccard Similarity
+#### Jaccard Similarity
 
 A similarity measure used to compare the feature repertoires of two cases.
 
@@ -182,9 +176,7 @@ Because the metric ignores shared absences, it is particularly well suited for *
 
 Jaccard similarity ranges from **0** (no shared features) to **1** (identical feature repertoires).
 
----
-
-## Pairwise Similarity Matrix
+#### Pairwise Similarity Matrix
 
 A table listing similarity scores for every pair of cases.
 
@@ -204,9 +196,9 @@ These matrices are often used as input for:
 
 ---
 
-# Absence and Disjunction
+### Absence and Disjunction
 
-## Zero-Overlap Pair
+#### Zero-Overlap Pair
 
 A pair of cases that share **no features in common**.
 
@@ -216,9 +208,7 @@ If Book A uses features `{Plato, Atlantis}` and Book B uses `{Mayan Calendar, Az
 
 Such relationships indicate **maximal divergence in feature repertoires**.
 
----
-
-## Significant Zero-Overlap
+#### Significant Zero-Overlap
 
 A zero-overlap relationship that occurs **less often than expected under a randomized version of the dataset**.
 
@@ -232,9 +222,7 @@ This helps distinguish between:
 - **incidental absence** caused by sparse data  
 - **structural disjunction** reflecting meaningful conceptual separation  
 
----
-
-## Feature Non-Co-Occurrence
+#### Feature Non-Co-Occurrence
 
 The feature-level analogue of zero-overlap.
 
@@ -247,17 +235,15 @@ Feature absence analysis identifies feature pairs that are:
 
 ---
 
-# Null Models and Statistical Testing
+### Null Models and Statistical Testing
 
-## Null Model
+#### Null Model
 
 A randomized version of the dataset used to estimate expected patterns.
 
 Null models allow researchers to determine whether observed patterns differ from what would occur by chance.
 
----
-
-## Degree-Preserving Null Model
+#### Degree-Preserving Null Model
 
 A randomization method that preserves:
 
@@ -268,9 +254,7 @@ while randomizing their associations.
 
 This ensures statistical tests account for the dataset’s structural constraints.
 
----
-
-## Curveball Algorithm
+#### Curveball Algorithm
 
 A method for generating degree-preserving randomizations of binary incidence matrices.
 
@@ -281,9 +265,7 @@ The algorithm repeatedly swaps feature lists between cases while preserving:
 
 This produces realistic randomized datasets for statistical testing.
 
----
-
-## Empirical Probability (`p_emp`)
+#### Empirical Probability (`p_emp`)
 
 The proportion of randomized datasets in which a particular pattern occurs.
 
@@ -293,9 +275,7 @@ p_emp = 0.01
 
 Lower values indicate stronger statistical significance.
 
----
-
-## False Discovery Rate (FDR)
+#### False Discovery Rate (FDR)
 
 A statistical correction used when performing many simultaneous tests.
 
@@ -308,9 +288,9 @@ Typical flags include:
 
 ---
 
-# Network Structures
+### Network Structures
 
-## Network (Graph)
+#### Network (Graph)
 
 A mathematical representation consisting of:
 
@@ -319,9 +299,7 @@ A mathematical representation consisting of:
 
 Networks are used to analyze structural relationships among cases or features.
 
----
-
-## Bipartite Network (Case × Feature)
+#### Bipartite Network (Case × Feature)
 
 A network containing two distinct types of nodes:
 
@@ -340,35 +318,31 @@ Book B — Atlantis
 
 This representation preserves the **original structure of the dataset**.
 
----
-
-## One-Mode Network (Projection)
+#### One-Mode Network (Projection)
 
 A network derived from a bipartite structure but that contains only one node type.
 
 Examples include:
 
-### Case × Case Networks
+#### Case × Case Networks
 
 All nodes represent cases.  
 Edges represent similarity based on shared features.
 
-### Feature × Feature Networks
+#### Feature × Feature Networks
 
 All nodes represent features.  
 Edges represent co-occurrence within cases.
 
----
-
-## Projection
+#### Projection
 
 The process of converting a bipartite network into a one-mode network.
 
 ---
 
-# Gradient and Mediation Concepts
+### Gradient and Mediation Concepts
 
-## Case Gradient
+#### Case Gradient
 
 A sequence of cases that indirectly connects two otherwise non-overlapping cases.
 
@@ -383,9 +357,7 @@ where:
 
 Case gradients reveal **mediated pathways across the discourse field**.
 
----
-
-## Feature Gradient
+#### Feature Gradient
 
 The feature-level analogue of a case gradient.
 
@@ -402,9 +374,7 @@ where:
 
 Feature gradients reveal **chains of conceptual mediation across the dataset**.
 
----
-
-## Mediating Case
+#### Mediating Case
 
 A case that connects otherwise disjoint parts of the feature space.
 
@@ -414,9 +384,7 @@ A ↔ B ↔ C ↔ D ↔ E
 
 cases **B, C, and D** act as intermediaries linking the endpoints of cases A and E.
 
----
-
-## Mediating Feature
+#### Mediating Feature
 
 A feature that connects otherwise separated feature regions.
 
@@ -428,9 +396,9 @@ Intermediate features create conceptual bridges across otherwise separate discou
 
 ---
 
-# Structural Network Analysis
+### Structural Network Analysis
 
-## Topological Analysis
+#### Topological Analysis
 
 Network methods that examine the **connectivity structure of a graph**—how nodes are linked to one another independent of visual layout or geometry.
 
@@ -450,9 +418,7 @@ Topological analysis in this repository is applied to both:
 - **case networks** (relationships between sources based on shared features)
 - **feature networks** (relationships between tropes based on co-occurrence across cases)  
 
----
-
-## Brokerage
+#### Brokerage
 
 A structural role in which a node connects otherwise separated parts of a network.
 
@@ -462,9 +428,7 @@ Broker nodes often facilitate:
 - conceptual mediation  
 - structural integration  
 
----
-
-## Constraint
+#### Constraint
 
 A network measure introduced by Ronald Burt.
 
@@ -473,9 +437,7 @@ Constraint measures how strongly a node’s connections are concentrated within 
 - **High constraint** ↔ node embedded in dense cluster  
 - **Low constraint** ↔ node bridges different regions of the network  
 
----
-
-## Effective Size
+#### Effective Size
 
 Another brokerage metric introduced by Ronald Burt.
 
@@ -485,25 +447,21 @@ Higher effective size indicates stronger brokerage potential.
 
 ---
 
-# Interpretation Concepts
+### Interpretation Concepts
 
-## Discourse Space (or Field)
+#### Discourse Space (or Field)
 
 The broader conceptual space defined by relationships among cases and features.
 
 Networks, gradients, and absence structures help map this field.
 
----
-
-## Structural Divergence
+#### Structural Divergence
 
 A condition in which cases or features occupy distinct regions of the discourse field.
 
 Absence networks often highlight such divergence.
 
----
-
-## Mediated Continuity
+#### Mediated Continuity
 
 The phenomenon in which apparently disconnected cases or features remain indirectly linked through intermediate elements.
 
