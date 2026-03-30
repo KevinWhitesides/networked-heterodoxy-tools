@@ -2,7 +2,8 @@
 """
 02_burt_brokerage_metrics.py
 
-Compute Burt-style brokerage / structural hole metrics on an existing network.
+Compute Burt-style brokerage / structural hole metrics on an existing one-mode
+network in GEXF format.
 
 Inputs
 ------
@@ -28,20 +29,30 @@ Notes
 - This script assumes the network has already been constructed.
 - It does not build or threshold the network itself.
 - Constraint is often the most directly interpretable brokerage metric.
+
+Standalone use:
+    Edit the CONFIG block below, then run:
+        python 02_burt_brokerage_metrics.py
+
+Pipeline / programmatic use:
+    Import this script and call:
+        run(...)
 """
 
 from __future__ import annotations
 
+import argparse
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Dict
 
-import pandas as pd
 import networkx as nx
+import pandas as pd
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# CONFIG
-# ──────────────────────────────────────────────────────────────────────────────
+# =============================================================================
+# CONFIG (standalone defaults)
+# =============================================================================
 
 INPUT_GEXF = Path("input_network.gexf")
 OUTPUT_DIR = Path(".")
@@ -55,123 +66,298 @@ OUT_SUMMARY = "analysis_summary.txt"
 PROGRESS_EVERY = 200
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 # Helpers
-# ──────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 
-def ensure_undirected(G: nx.Graph) -> nx.Graph:
-    """Convert directed graphs to undirected if necessary."""
-    if G.is_directed():
-        return G.to_undirected()
-    return G
+def _ensure_undirected(G: nx.Graph) -> tuple[nx.Graph, bool]:
+    """
+    Convert directed graphs to undirected if necessary.
+
+    Returns:
+        graph, was_directed
+    """
+    was_directed = G.is_directed()
+    if was_directed:
+        return G.to_undirected(), True
+    return G, False
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Main
-# ──────────────────────────────────────────────────────────────────────────────
+def _compute_burt_metrics(
+    G: nx.Graph,
+    *,
+    weight_attr: str,
+    progress_every: int,
+) -> tuple[pd.DataFrame, dict[str, float], dict[str, float], dict[str, int]]:
+    """
+    Compute Burt metrics node-by-node and return the results table plus raw dicts.
+    """
+    nodes = list(G.nodes())
+    degree = dict(G.degree())
 
-def main() -> None:
+    constraint: dict[str, float] = {}
+    effective_size: dict[str, float] = {}
+
+    for i, node in enumerate(nodes, start=1):
+        constraint[node] = nx.constraint(G, nodes=[node], weight=weight_attr)[node]
+        effective_size[node] = nx.effective_size(G, nodes=[node], weight=weight_attr)[node]
+
+        if progress_every and i % progress_every == 0:
+            print(f"{i}/{len(nodes)} nodes processed...")
+
+    df = pd.DataFrame(
+        {
+            "Id": nodes,
+            "constraint": [constraint[n] for n in nodes],
+            "effective_size": [effective_size[n] for n in nodes],
+            "degree": [degree[n] for n in nodes],
+        }
+    )
+
+    # Efficiency = effective size / degree
+    df["efficiency"] = df["effective_size"] / df["degree"].replace(0, pd.NA)
+
+    return df, constraint, effective_size, degree
+
+
+def _annotate_graph(
+    G: nx.Graph,
+    *,
+    constraint: dict[str, float],
+    effective_size: dict[str, float],
+    degree: dict[str, int],
+) -> None:
+    """Add Burt metrics back into graph node attributes."""
+    nx.set_node_attributes(G, constraint, "constraint")
+    nx.set_node_attributes(G, effective_size, "effective_size")
+    nx.set_node_attributes(
+        G,
+        {n: (effective_size[n] / degree[n] if degree[n] != 0 else None) for n in degree},
+        "efficiency",
+    )
+    nx.set_node_attributes(G, degree, "degree")
+
+
+def _write_summary(
+    out_path: Path,
+    *,
+    run_timestamp: str,
+    input_gexf: Path,
+    weight_attr: str,
+    was_directed: bool,
+    graph_num_nodes: int,
+    graph_num_edges: int,
+    min_constraint_node: str,
+    max_effective_size_node: str,
+    mean_constraint: float,
+    mean_effective_size: float,
+    mean_efficiency: float,
+    out_csv: Path,
+    out_gexf: Path,
+) -> None:
+    """Write a plain-text summary of the run."""
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write("=== Burt Brokerage Metrics Summary ===\n\n")
+        f.write(f"Run timestamp: {run_timestamp}\n\n")
+
+        f.write("Input\n")
+        f.write("-----\n")
+        f.write(f"Network file: {input_gexf}\n")
+        f.write(f"Weight attribute used: {weight_attr}\n\n")
+
+        f.write("Network statistics\n")
+        f.write("------------------\n")
+        f.write(f"Nodes: {graph_num_nodes}\n")
+        f.write(f"Edges: {graph_num_edges}\n")
+        f.write(f"Directed input converted to undirected: {'yes' if was_directed else 'no'}\n\n")
+
+        f.write("Metric summaries\n")
+        f.write("----------------\n")
+        f.write(f"Lowest constraint node: {min_constraint_node}\n")
+        f.write(f"Highest effective size node: {max_effective_size_node}\n")
+        f.write(f"Mean constraint: {mean_constraint:.6f}\n")
+        f.write(f"Mean effective size: {mean_effective_size:.6f}\n")
+        f.write(f"Mean efficiency: {mean_efficiency:.6f}\n\n")
+
+        f.write("Output files\n")
+        f.write("------------\n")
+        f.write(f"{out_csv.name}\n")
+        f.write(f"{out_gexf.name}\n")
+        f.write(f"{out_path.name}\n")
+
+
+# =============================================================================
+# Pipeline-ready entry point
+# =============================================================================
+
+def run(
+    *,
+    input_gexf: Path,
+    output_dir: Path,
+    weight_attr: str = "weight",
+    out_csv_name: str = "burt_metrics.csv",
+    out_gexf_name: str = "network_with_burt.gexf",
+    out_summary_name: str = "analysis_summary.txt",
+    progress_every: int = 200,
+) -> Dict[str, Any]:
+    """
+    Compute Burt brokerage metrics on an existing GEXF network and return a
+    structured result dictionary.
+
+    This is the entry point pipeline runners should call.
+    """
     run_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    if not INPUT_GEXF.exists():
-        raise FileNotFoundError(f"Input GEXF not found: {INPUT_GEXF}")
+    if not input_gexf.exists():
+        raise FileNotFoundError(f"Input GEXF not found: {input_gexf}")
 
-    # Load graph
-    G = nx.read_gexf(INPUT_GEXF)
-    G = ensure_undirected(G)
+    G_in = nx.read_gexf(input_gexf)
+    G, was_directed = _ensure_undirected(G_in)
 
     if G.number_of_nodes() == 0:
         raise ValueError("Input network has 0 nodes.")
     if G.number_of_edges() == 0:
         raise ValueError("Input network has 0 edges.")
 
-    nodes = list(G.nodes())
-    degree = dict(G.degree())
+    df, constraint, effective_size, degree = _compute_burt_metrics(
+        G,
+        weight_attr=weight_attr,
+        progress_every=progress_every,
+    )
 
-    constraint = {}
-    effective_size = {}
-
-    # Compute Burt metrics node by node
-    for i, node in enumerate(nodes, start=1):
-        constraint[node] = nx.constraint(G, nodes=[node], weight=WEIGHT_ATTR)[node]
-        effective_size[node] = nx.effective_size(G, nodes=[node], weight=WEIGHT_ATTR)[node]
-
-        if PROGRESS_EVERY and i % PROGRESS_EVERY == 0:
-            print(f"{i}/{len(nodes)} nodes processed...")
-
-    # Build results table
-    df = pd.DataFrame({
-        "Id": nodes,
-        "constraint": [constraint[n] for n in nodes],
-        "effective_size": [effective_size[n] for n in nodes],
-        "degree": [degree[n] for n in nodes],
-    })
-
-    # Efficiency = effective size / degree
-    df["efficiency"] = df["effective_size"] / df["degree"].replace(0, pd.NA)
-
-    # Export CSV
-    out_csv_path = OUTPUT_DIR / OUT_CSV
+    out_csv_path = output_dir / out_csv_name
     df.to_csv(out_csv_path, index=False, encoding="utf-8")
 
-    # Add attributes back into graph
-    nx.set_node_attributes(G, constraint, "constraint")
-    nx.set_node_attributes(G, effective_size, "effective_size")
-    nx.set_node_attributes(
+    _annotate_graph(
         G,
-        {n: (effective_size[n] / degree[n] if degree[n] != 0 else None) for n in nodes},
-        "efficiency"
+        constraint=constraint,
+        effective_size=effective_size,
+        degree=degree,
     )
-    nx.set_node_attributes(G, degree, "degree")
 
-    # Export annotated GEXF
-    out_gexf_path = OUTPUT_DIR / OUT_GEXF
+    out_gexf_path = output_dir / out_gexf_name
     nx.write_gexf(G, out_gexf_path)
 
-    # Summary stats
-    min_constraint_node = df.loc[df["constraint"].idxmin(), "Id"]
-    max_effective_size_node = df.loc[df["effective_size"].idxmax(), "Id"]
+    min_constraint_node = str(df.loc[df["constraint"].idxmin(), "Id"])
+    max_effective_size_node = str(df.loc[df["effective_size"].idxmax(), "Id"])
 
-    # Write summary
-    out_summary_path = OUTPUT_DIR / OUT_SUMMARY
-    with open(out_summary_path, "w", encoding="utf-8") as f:
-        f.write("=== Burt Brokerage Metrics Summary ===\n\n")
-        f.write(f"Run timestamp: {run_timestamp}\n\n")
+    mean_constraint = float(df["constraint"].mean())
+    mean_effective_size = float(df["effective_size"].mean())
+    mean_efficiency = float(df["efficiency"].dropna().mean())
 
-        f.write("Input\n")
-        f.write("-----\n")
-        f.write(f"Network file: {INPUT_GEXF}\n")
-        f.write(f"Weight attribute used: {WEIGHT_ATTR}\n\n")
+    out_summary_path = output_dir / out_summary_name
+    _write_summary(
+        out_path=out_summary_path,
+        run_timestamp=run_timestamp,
+        input_gexf=input_gexf,
+        weight_attr=weight_attr,
+        was_directed=was_directed,
+        graph_num_nodes=G.number_of_nodes(),
+        graph_num_edges=G.number_of_edges(),
+        min_constraint_node=min_constraint_node,
+        max_effective_size_node=max_effective_size_node,
+        mean_constraint=mean_constraint,
+        mean_effective_size=mean_effective_size,
+        mean_efficiency=mean_efficiency,
+        out_csv=out_csv_path,
+        out_gexf=out_gexf_path,
+    )
 
-        f.write("Network statistics\n")
-        f.write("------------------\n")
-        f.write(f"Nodes: {G.number_of_nodes()}\n")
-        f.write(f"Edges: {G.number_of_edges()}\n")
-        f.write(f"Directed input converted to undirected: {'yes' if G.is_directed() else 'no'}\n\n")
+    return {
+        "run_timestamp": run_timestamp,
+        "input_gexf": str(input_gexf),
+        "output_dir": str(output_dir),
+        "graph_num_nodes": G.number_of_nodes(),
+        "graph_num_edges": G.number_of_edges(),
+        "burt_metrics_csv": str(out_csv_path),
+        "annotated_gexf": str(out_gexf_path),
+        "summary_txt": str(out_summary_path),
+        "min_constraint_node": min_constraint_node,
+        "max_effective_size_node": max_effective_size_node,
+        "mean_constraint": mean_constraint,
+        "mean_effective_size": mean_effective_size,
+        "mean_efficiency": mean_efficiency,
+    }
 
-        f.write("Metric summaries\n")
-        f.write("----------------\n")
-        f.write(f"Lowest constraint node: {min_constraint_node}\n")
-        f.write(f"Highest effective size node: {max_effective_size_node}\n")
-        f.write(f"Mean constraint: {df['constraint'].mean():.6f}\n")
-        f.write(f"Mean effective size: {df['effective_size'].mean():.6f}\n")
-        f.write(f"Mean efficiency: {df['efficiency'].dropna().mean():.6f}\n\n")
 
-        f.write("Output files\n")
-        f.write("------------\n")
-        f.write(f"{OUT_CSV}\n")
-        f.write(f"{OUT_GEXF}\n")
-        f.write(f"{OUT_SUMMARY}\n")
+# =============================================================================
+# CLI
+# =============================================================================
 
-    # Console summary
+def _parse_args() -> argparse.Namespace:
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Compute Burt brokerage metrics from an existing GEXF network."
+    )
+
+    parser.add_argument(
+        "--input-gexf",
+        type=Path,
+        default=INPUT_GEXF,
+        help="Path to input GEXF network",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=OUTPUT_DIR,
+        help="Directory for outputs",
+    )
+    parser.add_argument(
+        "--weight-attr",
+        type=str,
+        default=WEIGHT_ATTR,
+        help='Edge weight attribute name (default: "weight")',
+    )
+    parser.add_argument(
+        "--out-csv",
+        type=str,
+        default=OUT_CSV,
+        help="Output filename for Burt metrics CSV",
+    )
+    parser.add_argument(
+        "--out-gexf",
+        type=str,
+        default=OUT_GEXF,
+        help="Output filename for annotated GEXF",
+    )
+    parser.add_argument(
+        "--out-summary",
+        type=str,
+        default=OUT_SUMMARY,
+        help="Output filename for analysis summary",
+    )
+    parser.add_argument(
+        "--progress-every",
+        type=int,
+        default=PROGRESS_EVERY,
+        help="Print progress every N nodes (0 disables progress messages)",
+    )
+
+    return parser.parse_args()
+
+
+# =============================================================================
+# Main (standalone execution)
+# =============================================================================
+
+def main() -> None:
+    """Run the script using CONFIG defaults or CLI overrides."""
+    args = _parse_args()
+
+    result = run(
+        input_gexf=args.input_gexf,
+        output_dir=args.output_dir,
+        weight_attr=args.weight_attr,
+        out_csv_name=args.out_csv,
+        out_gexf_name=args.out_gexf,
+        out_summary_name=args.out_summary,
+        progress_every=args.progress_every,
+    )
+
     print("[✓] Burt brokerage analysis complete.")
-    print(f"    Input network:      {INPUT_GEXF}")
-    print(f"    Nodes / edges:      {G.number_of_nodes()} / {G.number_of_edges()}")
-    print(f"    Output CSV:         {out_csv_path}")
-    print(f"    Output GEXF:        {out_gexf_path}")
-    print(f"    Analysis summary:   {out_summary_path}")
-
-
-if __name__ == "__main__":
-    main()
+    print(f"    Input network:      {result['input_gexf']}")
+    print(f"    Nodes / edges:      {result['graph_num_nodes']} / {result['graph_num_edges']}")
+    print(f"    Output CSV:         {result['burt_metrics_csv']}")
+    print(f"    Output GEXF:        {result['annotated_gexf']}")
+    print(f"    Analysis summary:   {result['summary_txt']}")

@@ -14,6 +14,10 @@ Topology measures help identify three structural roles in networks:
 Most scripts in this folder operate on **existing network graphs (`.gexf`)**
 produced by the scripts in `02_networks/`.
 
+Each script operates on **a single network at a time**.
+
+When multiple networks are produced (e.g., across different thresholds or projection modes), these scripts are typically invoked **repeatedly within a pipeline**, rather than processing multiple networks in a single run.
+
 ---
 
 ## Analytical Focus
@@ -124,7 +128,7 @@ Together they help distinguish between:
 
 ### 01_k_components_from_gexf.py
 
-Computes **k-components** and **k-core numbers** from an existing network.
+Computes **k-components** and exports **k-core numbers** from an existing network.
 
 Input:
 
@@ -160,7 +164,7 @@ Input:
 The script:
 
 1. Reads the network graph from GEXF.
-2. Ensures the network is undirected.
+2. Ensures the network is undirected (directed inputs are converted automatically).
 3. Computes node-level brokerage metrics:
 
    - **constraint**
@@ -245,3 +249,16 @@ Scripts in this folder assume that the input network:
 
 Topology analysis therefore represents a **downstream analytical step**
 following network construction.
+
+---
+
+## Role in Pipelines
+
+Topology scripts are typically used as **downstream analysis steps** in
+multi-stage workflows.
+
+In pipeline contexts, they are applied to **each network generated during
+projection**, enabling comparison of structural properties across:
+
+- different threshold levels
+- different projection modes (e.g., case vs feature networks)
