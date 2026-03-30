@@ -85,9 +85,8 @@ The script:
    - by specifying a fixed number of clusters, or
    - by applying a distance threshold.
 5. Exports:
-   - cluster assignments for each case (CSV)
-   - average intra-cluster similarity statistics
-   - similarity of each case to the other members of its cluster
+   - cluster assignments for each case and average intra-cluster similarity statistics (CSV)
+   - similarity of each case to the mean of its assigned cluster
    - optional dendrogram visualization
    
 This script supports two clustering modes:
@@ -112,7 +111,8 @@ So, for example:
 - Higher cutoffs → fewer clusters (looser grouping)
 
 This script formalizes patterns visible in similarity heatmaps by producing
-explicit **cluster structures** and diagnostic summaries of cluster cohesion.
+explicit **cluster structures** and diagnostic summaries of cluster cohesion,
+including per-case measures of how strongly each case fits within its assigned cluster.
 
 ---
 

@@ -39,7 +39,7 @@ from typing import Any, Dict, Optional
 # =============================================================================
 
 # Input binary incidence matrix
-INPUT_PATH = Path("first_7_books.xlsx")
+INPUT_PATH = Path("dissertation/sample_data/first_7_books.xlsx")
 
 # Shared matrix settings
 TITLE_COL: Optional[str] = None
@@ -176,7 +176,6 @@ def _write_pipeline_summary(
 
         f.write("Stage 2 outputs\n")
         f.write("---------------\n")
-        f.write(f"Cluster assignments CSV: {stage2_result['cluster_assignments_csv']}\n")
         f.write(f"Cluster summary CSV: {stage2_result['cluster_summary_csv']}\n")
         f.write(f"Case similarity-to-cluster CSV: {stage2_result['case_similarity_to_cluster_csv']}\n")
         f.write(f"Dendrogram PNG: {stage2_result['dendrogram_png']}\n")
@@ -264,7 +263,6 @@ def run(
         linkage_method=linkage_method,
         n_clusters=n_clusters,
         distance_cutoff=distance_cutoff,
-        out_assignments_name=None,
         out_cluster_summary_name=None,
         out_case_to_cluster_name=None,
         out_dendrogram_name=None,
@@ -303,7 +301,6 @@ def run(
         "pipeline_summary_txt": str(pipeline_summary_path),
         "jaccard_csv": stage1_result["jaccard_csv"],
         "heatmap_png": stage1_result["heatmap_png"],
-        "cluster_assignments_csv": stage2_result["cluster_assignments_csv"],
         "cluster_summary_csv": stage2_result["cluster_summary_csv"],
         "case_similarity_to_cluster_csv": stage2_result["case_similarity_to_cluster_csv"],
         "dendrogram_png": stage2_result["dendrogram_png"],
@@ -427,7 +424,6 @@ def main() -> None:
     print(f"    Pipeline output dir:      {result['pipeline_output_dir']}")
     print(f"    Jaccard CSV:              {result['jaccard_csv']}")
     print(f"    Heatmap PNG:              {result['heatmap_png']}")
-    print(f"    Cluster assignments CSV:  {result['cluster_assignments_csv']}")
     print(f"    Cluster summary CSV:      {result['cluster_summary_csv']}")
     print(f"    Case-fit CSV:             {result['case_similarity_to_cluster_csv']}")
     print(f"    Dendrogram PNG:           {result['dendrogram_png']}")

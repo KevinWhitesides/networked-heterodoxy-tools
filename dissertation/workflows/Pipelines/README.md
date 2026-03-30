@@ -41,7 +41,8 @@ Identify similarity structure and group cases based on shared feature repertoire
    → `03_similarity/02_cluster_from_jaccard.py`  
    - Converts similarity to distance  
    - Performs clustering  
-   - Assigns cases to clusters  
+   - Assigns cases to clusters
+   - Computes per-case similarity to assigned cluster     
    - Writes cluster outputs and summary  
 
 ---
@@ -64,7 +65,6 @@ The pipeline creates a timestamped output directory containing:
 - analysis summary
 
 ### Stage 2 (`02_clustering/`)
-- Cluster assignments (CSV)
 - Cluster summary (CSV)
 - Case similarity-to-cluster (CSV)
 - Dendrogram (PNG, optional)

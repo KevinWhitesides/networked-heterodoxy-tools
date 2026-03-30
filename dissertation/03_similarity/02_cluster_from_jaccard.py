@@ -11,11 +11,10 @@ Cluster cases from a square similarity matrix (case × case) by:
 
 Outputs:
 
-1) cluster assignments CSV
-2) cluster summary CSV (average intra-cluster similarity)
-3) per-case mean similarity-to-cluster CSV
-4) dendrogram PNG (optional)
-5) analysis_summary.txt
+1) cluster summary CSV (average intra-cluster similarity)
+2) per-case mean similarity-to-cluster CSV
+3) dendrogram PNG (optional)
+4) analysis_summary.txt
 
 This script supports TWO clustering modes. Use ONLY ONE at a time:
 
@@ -116,17 +115,14 @@ OUTPUT_DIR = Path(".")
 # Output filenames
 # If these are set to None, default names will be generated automatically
 # based on the clustering rule, e.g.:
-#   clusters_k3.csv
 #   cluster_summary_k3.csv
 #   case_similarity_to_cluster_k3.csv
 #   dendrogram_k3.png
 #
 # or, for cutoff mode:
-#   clusters_d0_65.csv
 #   cluster_summary_d0_65.csv
 #   case_similarity_to_cluster_d0_65.csv
 #   dendrogram_d0_65.png
-OUT_ASSIGNMENTS: Optional[str] = None
 OUT_CLUSTER_SUMMARY: Optional[str] = None
 OUT_CASE_TO_CLUSTER: Optional[str] = None
 OUT_DENDROGRAM_PNG: Optional[str] = None
@@ -228,15 +224,11 @@ def _choose_cluster_rule(
 
 def _resolve_output_names(
     suffix: str,
-    out_assignments_name: Optional[str],
     out_cluster_summary_name: Optional[str],
     out_case_to_cluster_name: Optional[str],
     out_dendrogram_name: Optional[str],
-) -> tuple[str, str, str, str]:
+) -> tuple[str, str, str]:
     """Resolve default output filenames based on the clustering rule."""
-    if out_assignments_name is None:
-        out_assignments_name = f"clusters_{suffix}.csv"
-
     if out_cluster_summary_name is None:
         out_cluster_summary_name = f"cluster_summary_{suffix}.csv"
 
@@ -247,7 +239,6 @@ def _resolve_output_names(
         out_dendrogram_name = f"dendrogram_{suffix}.png"
 
     return (
-        out_assignments_name,
         out_cluster_summary_name,
         out_case_to_cluster_name,
         out_dendrogram_name,
@@ -306,7 +297,6 @@ def _write_summary(
     write_dendrogram: bool,
     n_cases: int,
     n_clusters_found: int,
-    out_assignments: Path,
     out_cluster_summary: Path,
     out_case_to_cluster: Path,
     out_dendrogram: Optional[Path],
@@ -334,7 +324,6 @@ def _write_summary(
 
         f.write("Outputs\n")
         f.write("-------\n")
-        f.write(f"Cluster assignments CSV: {out_assignments.name}\n")
         f.write(f"Cluster summary CSV: {out_cluster_summary.name}\n")
         f.write(f"Case similarity-to-cluster CSV: {out_case_to_cluster.name}\n")
         if out_dendrogram is not None:
@@ -355,7 +344,6 @@ def run(
     linkage_method: str = "average",
     n_clusters: Optional[int] = 3,
     distance_cutoff: Optional[float] = None,
-    out_assignments_name: Optional[str] = None,
     out_cluster_summary_name: Optional[str] = None,
     out_case_to_cluster_name: Optional[str] = None,
     out_dendrogram_name: Optional[str] = None,
@@ -385,13 +373,11 @@ def run(
     criterion, threshold, rule_desc, suffix = _choose_cluster_rule(n_clusters, distance_cutoff)
 
     (
-        resolved_out_assignments_name,
         resolved_out_cluster_summary_name,
         resolved_out_case_to_cluster_name,
         resolved_out_dendrogram_name,
     ) = _resolve_output_names(
         suffix=suffix,
-        out_assignments_name=out_assignments_name,
         out_cluster_summary_name=out_cluster_summary_name,
         out_case_to_cluster_name=out_case_to_cluster_name,
         out_dendrogram_name=out_dendrogram_name,
@@ -402,13 +388,10 @@ def run(
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    out_assignments = output_dir / resolved_out_assignments_name
     out_cluster_summary = output_dir / resolved_out_cluster_summary_name
     out_case_to_cluster = output_dir / resolved_out_case_to_cluster_name
     out_dendrogram = output_dir / resolved_out_dendrogram_name
     out_summary = output_dir / out_summary_name
-
-    cluster_df.to_csv(out_assignments, index=False, encoding="utf-8")
 
     cluster_summaries: list[dict[str, object]] = []
     case_fit_rows: list[dict[str, object]] = []
@@ -463,7 +446,6 @@ def run(
         write_dendrogram=write_dendrogram,
         n_cases=len(labels),
         n_clusters_found=int(cluster_df["Cluster"].nunique()),
-        out_assignments=out_assignments,
         out_cluster_summary=out_cluster_summary,
         out_case_to_cluster=out_case_to_cluster,
         out_dendrogram=dendrogram_path,
@@ -478,7 +460,6 @@ def run(
         "cluster_rule": rule_desc,
         "n_cases": len(labels),
         "n_clusters_found": int(cluster_df["Cluster"].nunique()),
-        "cluster_assignments_csv": str(out_assignments),
         "cluster_summary_csv": str(out_cluster_summary),
         "case_similarity_to_cluster_csv": str(out_case_to_cluster),
         "dendrogram_png": str(out_dendrogram) if dendrogram_path is not None else None,
@@ -540,12 +521,7 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
 
-    parser.add_argument(
-        "--out-assignments",
-        type=str,
-        default=OUT_ASSIGNMENTS,
-        help="Output filename for cluster assignments CSV (default: auto-generated from clustering rule)",
-    )
+   
     parser.add_argument(
         "--out-cluster-summary",
         type=str,
@@ -613,7 +589,6 @@ def main() -> None:
         linkage_method=args.linkage_method,
         n_clusters=args.n_clusters,
         distance_cutoff=args.distance_cutoff,
-        out_assignments_name=args.out_assignments,
         out_cluster_summary_name=args.out_cluster_summary,
         out_case_to_cluster_name=args.out_case_to_cluster,
         out_dendrogram_name=args.out_dendrogram,
