@@ -83,17 +83,17 @@ PROJECTION_MODES = ["feature"]
 
 # Minimum node frequency filters
 # Feature mode: minimum number of cases a feature must appear in
-MIN_FEATURE_NODE_FREQ = 2
+MIN_FEATURE_NODE_FREQ = 4
 
 # Case mode: minimum number of features a case must contain
 MIN_CASE_NODE_FREQ = 2
 
 # Edge thresholds by projection mode
 # Feature mode: minimum number of shared cases for feature-feature edges
-FEATURE_EDGE_THRESHOLDS = [20, 30, 40]
+FEATURE_EDGE_THRESHOLDS = [3, 4]
 
 # Case mode: minimum number of shared features for case-case edges
-CASE_EDGE_THRESHOLDS = [5, 10, 15]
+CASE_EDGE_THRESHOLDS = [1, 15]
 
 # Output directory
 OUTPUT_DIR = Path(".")

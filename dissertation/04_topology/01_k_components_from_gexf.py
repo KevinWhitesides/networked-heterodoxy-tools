@@ -53,7 +53,7 @@ except Exception:  # pragma: no cover
 # =============================================================================
 
 # Input network file (GEXF)
-INPUT_GEXF = Path("input_network.gexf")
+INPUT_GEXF = Path("feature/first_7_books_feature_thr3.gexf")
 
 # Output directory
 OUTPUT_DIR = Path("k_components_output")

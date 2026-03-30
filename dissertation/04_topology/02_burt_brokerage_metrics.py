@@ -48,13 +48,14 @@ from typing import Any, Dict
 
 import networkx as nx
 import pandas as pd
+import numpy as np
 
 
 # =============================================================================
 # CONFIG (standalone defaults)
 # =============================================================================
 
-INPUT_GEXF = Path("input_network.gexf")
+INPUT_GEXF = Path("feature/first_7_books_feature_thr3.gexf")
 OUTPUT_DIR = Path(".")
 
 WEIGHT_ATTR = "weight"
@@ -115,7 +116,7 @@ def _compute_burt_metrics(
     )
 
     # Efficiency = effective size / degree
-    df["efficiency"] = df["effective_size"] / df["degree"].replace(0, pd.NA)
+    df["efficiency"] = df["effective_size"] / df["degree"].replace(0, np.nan)
 
     return df, constraint, effective_size, degree
 
@@ -132,7 +133,7 @@ def _annotate_graph(
     nx.set_node_attributes(G, effective_size, "effective_size")
     nx.set_node_attributes(
         G,
-        {n: (effective_size[n] / degree[n] if degree[n] != 0 else None) for n in degree},
+        {n: (effective_size[n] / degree[n] if degree[n] != 0 else float("nan")) for n in degree},
         "efficiency",
     )
     nx.set_node_attributes(G, degree, "degree")
@@ -361,3 +362,6 @@ def main() -> None:
     print(f"    Output CSV:         {result['burt_metrics_csv']}")
     print(f"    Output GEXF:        {result['annotated_gexf']}")
     print(f"    Analysis summary:   {result['summary_txt']}")
+    
+if __name__ == "__main__":
+    main()
