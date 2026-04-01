@@ -1,30 +1,62 @@
-# Dissertation Resources: Networked Heterodoxy Tools
+# Networked Heterodoxy Tools
 
-This module contains scripts, workflows, and documentation developed for computational analysis in the dissertation:
+This repository contains scripts, workflows, and documentation developed for computational analysis in the dissertation:
 
-*Networks of Heterodoxy: Shared Dissent and the Dynamics of Counter-Discourse* by Kevin Whitesides (2026), University of California, Santa Barbara.
+**_Networks of Heterodoxy: Shared Dissent and the Dynamics of Counter-Discourse_**  
+Kevin Whitesides (2026), University of California, Santa Barbara
 
-This toolkit operationalizes the concept of networked heterodoxy by modeling cultural datasets as relational structures of similarity, absence, and mediation.
+---
 
-It analyzes the relational structure of cultural datasets represented as binary case × feature incidence matrices.
-It identifies patterns of shared repertoires (similarity), structural disjunctions (absence), and mediated pathways (gradients) between cases and features.
+## Overview
 
-Scripts are organized **by methodological task rather than dataset**, allowing them to be reused across multiple case studies.
+This toolkit operationalizes the concept of **networked heterodoxy** by modeling cultural datasets as relational structures of:
+
+- **Similarity** (shared feature repertoires)
+- **Absence** (structural disjunction)
+- **Gradients** (mediated pathways across discourse space)
+
+The core data structure is a **binary case × feature incidence matrix**, where:
+
+- rows = cases (books, songs, documents, etc.)
+- columns = features (tropes, entities, concepts, topics)
+
+The toolkit enables researchers to:
+
+- identify clusters and discourse communities  
+- detect structural disjunctions (zero-overlap regions)  
+- trace mediated pathways across conceptual space  
+- analyze network topology and brokerage structure  
+
+Scripts are organized **by methodological task rather than dataset**, making them reusable across domains.
+
+---
+
+## Contents
+
+- [Getting Started](#getting-started)
+- [Repository Structure](#repository-structure)
+- [Toolkit Workflows](#toolkit-workflows)
+- [Pipelines](#pipelines)
+- [Analytical Logic](#analytical-logic)
+- [Glossary](#glossary)
+- [Data Format Assumptions](#data-format-assumptions)
+- [Dependencies](#dependencies)
+- [External Tools](#external-tools)
 
 ---
 
 ## Getting Started
 
-To use the scripts and pipelines in this repository, first obtain a local copy.
-
 ### Option 1: Clone with Git
 
-    git clone https://github.com/KevinWhitesides/networked-heterodoxy-tools.git
-    cd networked-heterodoxy-tools
+```
+git clone https://github.com/KevinWhitesides/networked-heterodoxy-tools.git
+cd networked-heterodoxy-tools
+```
 
 ### Option 2: Download ZIP
 
-- Click "Code" → "Download ZIP" on GitHub  
+- Click **Code → Download ZIP** on GitHub  
 - Extract the folder  
 - Open a terminal in the extracted directory  
 
@@ -44,16 +76,6 @@ This will:
 
 ---
 
-## Contents
-
-- [Repository Structure](#repository-structure)
-- [Toolkit Workflows](#toolkit-workflows)
-- [Glossary](#glossary)
-- [Data Format Assumptions](#data-format-assumptions)
-- [Installation](#installation)
-
----
-
 ## Repository Structure
 
 - `01_diagnostics/` — Threshold and structural diagnostics for calibrating network construction.
@@ -61,7 +83,7 @@ This will:
 - `03_similarity/` — Similarity, non-overlap, and gradient analyses for identifying clusters, boundaries, and mediated pathways within case × feature datasets.
 - `04_topology/` — Structural network analysis, including k-component decomposition and brokerage metrics.
 - `05_distribution/` — Distribution of features across producers within a discourse space, including prominence, diffusion, concentration, and clique identification.
-- `06_topic_modeling/` — MALLET pipelines, pyLDAvis visualizations, and topic dendrogram construction.
+- `06_topic_modeling/` — MALLET workflows, pyLDAvis, topic dendrograms.
 
 
 - `docs/` — Methodological notes, data format specifications, and supporting documentation.
@@ -81,8 +103,7 @@ It shows how different analytical components relate to one another.
 
 ## Pipelines
 
-This repository includes **pipeline scripts** that combine individual analytical
-components into reproducible workflows.
+This repository includes **four core pipelines**, each corresponding to a distinct analytical problem.
 
 [![Networked Heterodoxy Toolkit Pipelines](workflows/Pipelines/networked_heterodoxy_pipelines.png)](workflows/Pipelines/networked_heterodoxy_pipelines.png)
 
@@ -96,10 +117,52 @@ These scripts:
 - organize outputs into structured directories  
 - generate summary files documenting each run  
 
+### Pipeline Summary
+
+| Pipeline | Focus |
+|----------|------|
+| **Pipeline 1** | Network construction + topology |
+| **Pipeline 2** | Similarity + clustering |
+| **Pipeline 3** | Case-level absence + gradients |
+| **Pipeline 4** | Feature-level absence + gradients |
+
 For details, see:
 
 - `workflows/README.md` — general workflow structure  
 - `workflows/pipelines/README.md` — pipeline-specific documentation  
+
+---
+
+## Analytical Logic
+
+The toolkit operates across three complementary analytical layers:
+
+### 1. Similarity
+
+- Jaccard similarity  
+- clustering  
+- co-occurrence networks  
+
+→ reveals **shared discourse structure**
+
+---
+
+### 2. Absence
+
+- zero-overlap cases  
+- non-co-occurring features  
+- absence networks  
+
+→ reveals **structural disjunction** across discourses
+
+---
+
+### 3. Gradients
+
+- case gradients  
+- feature gradients  
+
+→ reveals **mediated continuity across disjoint regions**
 
 ---
 
@@ -530,14 +593,20 @@ Gradient analysis reveals these hidden pathways across discourse structures.
 
 ## Data Format Assumptions
 
-Most network scripts assume input in the form of a **binary incidence matrix** — a spreadsheet representing relationships between cases and features.
+Most network scripts assume input in the form of a **binary incidence matrix**: 
 
-Typical structure:
+- Rows = cases
+- Columns = features
+- Presence = "X" or "1"`
+- Absence = blank or "0"
 
-- Rows = cases (books, songs, etc.)
-- Columns = tropes, topics, or features
-- Presence indicated by `"X"`
-- Absence left blank
+Example:
+
+| Case | Feature A | Feature B | Feature C |
+|------|----------|----------|----------|
+| Case 1 | X | | X |
+| Case 2 | | X | |
+| Case 3 | X | X | |
 
 From this matrix, the scripts construct:
 
@@ -548,11 +617,441 @@ From this matrix, the scripts construct:
 
 ---
 
-## Installation
+## Dependencies
+
+The `requirements.txt` file includes all Python dependencies needed for:
+
+- network construction  
+- similarity analysis  
+- clustering  
+- topology metrics  
+- visualization
+
+### Installation
 
 Python **3.9+** recommended.
 
-Install dependencies with:
+Install dependencies from the repo root directory:
+
+```
+pip install -r requirements.txt
+```
+
+---
+
+## External Tools
+
+### Topic Modeling (MALLET)
+
+Topic modeling workflows in this repository use **MALLET** (Machine Learning for Language Toolkit), rather than Python-based libraries such as gensim.
+
+MALLET is a **separate Java-based program** and must be installed manually. It is not included in `requirements.txt`.
+
+#### Step 1: Download MALLET
+
+Download MALLET from:
+
+http://mallet.cs.umass.edu/
+
+Unzip the downloaded folder to a location on your computer.
+
+#### Step 2: Place MALLET in a simple directory (IMPORTANT for Windows)
+
+On Windows, MALLET may fail if its path contains spaces (e.g., in your username).
+
+For example, this path may cause errors:
+
+```
+C:\Users\Kevin Whitesides\mallet\bin\mallet.bat
+```
+
+To avoid this, it is strongly recommended to move MALLET to a directory **without spaces**, such as:
+
+```
+C:\mallet
+```
+
+On macOS/Linux, this is less likely to cause issues, but using a simple path is still good practice:
+
+```
+~/mallet
+```
+
+#### Step 3: Locate the MALLET executable
+
+Inside the MALLET folder, locate:
+
+- **Windows:** `bin\mallet.bat`  
+- **macOS/Linux:** `bin/mallet`
+
+#### Step 4: Tell the scripts where MALLET is
+
+You have two options:
+
+##### Option A (Recommended): Set the path directly in the script
+
+In the topic modeling scripts, set:
+
+```python
+MALLET_PATH = "C:/mallet/bin/mallet.bat"     # Windows
+# or
+MALLET_PATH = "/Users/yourname/mallet/bin/mallet"  # macOS/Linux
+```
+
+This is the simplest and most reliable approach.
+
+##### Option B (Advanced): Add MALLET to your system PATH
+
+This allows you to run `mallet` from any terminal.
+
+**Windows:**
+1. Search for “Environment Variables”
+2. Open “Edit the system environment variables”
+3. Click “Environment Variables”
+4. Under “System variables,” select `Path` → “Edit”
+5. Add:
+   ```
+   C:\mallet\bin
+   ```
+6. Restart your terminal
+
+**macOS/Linux:**
+
+Add to your shell configuration file (`.bashrc`, `.zshrc`, etc.):
 
 ```bash
-pip install -r requirements.txt
+export PATH="$PATH:/Users/yourname/mallet/bin"
+```
+
+Then restart your terminal.
+
+#### Troubleshooting
+
+If MALLET fails to run:
+
+1. **Check the path**
+   - Make sure `MALLET_PATH` points to the correct file
+   - Confirm the file exists
+
+2. **Check for spaces in the path (Windows)**
+   - If your path includes spaces, move MALLET to `C:\mallet`
+
+3. **Test MALLET manually**
+   - Open a terminal and run:
+     ```
+     mallet
+     ```
+   - If this fails, the installation or PATH is not configured correctly
+
+#### Notes
+
+- MALLET requires **Java** to be installed on your system  
+- Topic modeling scripts will not work unless MALLET is properly configured  
+- These steps are required **only for topic modeling workflows**  
+
+---
+
+### Network Visualization (Gephi)
+
+Many scripts in this repository output network files in **GEXF format**, which are
+intended for visualization and exploration in **Gephi**.
+
+#### Install Gephi
+
+Download Gephi from:
+
+https://gephi.org/
+
+Install and launch the application.
+
+#### Opening a network
+
+1. Open Gephi  
+2. Click **File → Open**  
+3. Select a `.gexf` file produced by the scripts  
+
+### Important: Structure vs Visualization
+
+The `.gexf` files generated by this repository store:
+
+- nodes  
+- edges  
+- weights  
+- node attributes (degree, constraint, modularity class, etc.)
+
+They do **not** store:
+
+- layout algorithm  
+- layout settings  
+- final node positions  
+
+This means:
+
+- every time a network is opened, you must run a layout  
+- visualization is an interpretive step performed in Gephi  
+
+If you want to preserve a specific visualization layout, save a **`.gephi` project file**.
+
+### Basic Workflow
+
+After opening a network:
+
+1. Go to the **Overview** window  
+2. Run **Statistics → Modularity**  
+3. Apply a layout (see below)  
+4. Adjust node size and color  
+5. Explore in Overview and Data Laboratory  
+6. Export presentation/publication-ready network visualizations from Preview  
+
+### Layouts: What They Do
+
+A **layout algorithm** determines how nodes are positioned in space.
+
+The most commonly used layouts are:
+
+- **ForceAtlas2**
+- **Yifan Hu**
+
+These are **force-directed layouts**, which simulate:
+
+- node repulsion (nodes push apart)
+- edge attraction (connected nodes pull together)
+
+The result is a spatial representation of network structure:
+
+- clusters form naturally  
+- bridges stretch between clusters  
+
+### Recommended Layout Workflow
+
+#### Optional First Pass: Yifan Hu (stabilization)
+
+Use when:
+- the network starts as a dense hairball
+- ForceAtlas2 produces clumped or unstable layouts
+
+Typical use:
+- run briefly (5–10 seconds)
+- do not aim for a final layout
+
+Purpose:
+- spread nodes out
+- helps avoid layouts where nodes get stuck in an overly compressed or tangled configuration
+
+Note:
+- For smaller or already structured networks, this step may not be necessary
+
+#### Main Layout: ForceAtlas2
+
+ForceAtlas2 is the primary layout for most networks in this repository.
+
+Run until the network stabilizes (typically 30–120 seconds depending on size).
+
+#### Optional Second Pass: LinLog refinement
+
+After ForceAtlas2 stabilizes:
+
+- turn **LinLog mode ON**
+- run briefly (20–40 seconds)
+
+Effect:
+- strengthens cluster separation  
+- reduces long-range attraction  
+- produces clearer community structure  
+
+This is especially useful for identifying discourse communities.
+
+### ForceAtlas2 Settings Explained
+
+The *appearance* of the network depends heavily on layout parameters, although the *structure* remains the same.
+
+Below are the most important settings and what they do.
+
+#### Scaling
+
+Controls the strength of node repulsion.
+
+- **Low scaling**
+  - nodes cluster tightly  
+  - graph appears compact  
+
+- **High scaling**
+  - nodes spread apart  
+  - clusters separate more clearly  
+
+Use:
+- higher values for dense networks  
+- lower values for sparse networks  
+
+#### Gravity
+
+Controls how strongly the graph is pulled toward the center.
+
+- **Low gravity**
+  - clusters may drift apart  
+  - disconnected regions spread out  
+
+- **High gravity**
+  - network stays compact  
+  - clusters pulled toward center  
+
+Use:
+- increase if the network is too dispersed  
+- decrease if the network is too compressed  
+
+#### Edge Weight Influence
+
+Controls how much edge weights affect attraction strength.
+
+- **0 (no influence)**
+  - all edges treated equally  
+  - layout reflects **structure (connectivity)** only  
+
+- **Greater than 0**
+  - stronger edges pull nodes closer  
+  - layout reflects **intensity (frequency / weight)**  
+
+Interpretation:
+
+- Use lower values if you want to emphasize **structural relationships**  
+- Use higher values if you want to emphasize **strength of association**
+
+#### Prevent Overlap
+
+- When ON:
+  - nodes do not overlap visually  
+  - improves readability  
+
+- When OFF:
+  - nodes may stack or collide  
+
+Recommended: ON for most use cases
+
+#### LinLog Mode
+
+Changes how attraction forces behave.
+
+- OFF (default):
+  - balanced global structure  
+  - smoother layout  
+
+- ON:
+  - emphasizes cluster separation  
+  - reduces long-range attraction  
+
+Recommended:
+- use as an optional second pass for clearer community structure, if needed
+
+### Recommended ForceAtlas2 Starting Settings
+
+The following settings provide a reliable starting point for most networks generated by this repository. These are not fixed rules—adjustments may be needed depending on network size and density.
+
+- **Scaling:** 50–100  
+  Controls node repulsion. Increase for dense networks; decrease for sparse ones. 
+  You can keep adjusting this. I often end up in the several hundreds to get the visual scale that I want.
+
+- **Gravity:** 0.1  
+  Keeps the network from drifting apart. Increase if clusters spread too far.
+
+- **Edge Weight Influence:** 0.1  
+  Allows edge weights to slightly influence node attraction without dominating the layout.
+
+- **Prevent Overlap:** ON  
+  Improves readability by preventing nodes from stacking.
+
+- **LinLog Mode:** OFF (initially)  
+  Use OFF for the main layout. Can be enabled later for cluster refinement.
+
+These settings are intended as a starting point. Different thresholded networks may require different adjustments.
+
+### Important: Layouts Are Not Reversible
+
+In Gephi, layout operations (ForceAtlas2, LinLog, Noverlap, etc.) modify node positions directly.
+
+- There is no reliable “undo” system for layout changes  
+- Each layout pass permanently overwrites the previous arrangement  
+- If a layout change produces an undesirable result, it cannot be reverted automatically  
+
+#### Practical Implications
+
+- Treat each layout step as a committed change  
+- Be cautious when applying additional layout passes (e.g., LinLog or Noverlap)  
+- Small adjustments can significantly alter the structure  
+
+#### Recommended Workflow
+
+To avoid losing a good layout:
+
+1. Run your main layout (e.g., ForceAtlas2)  
+2. Pause and evaluate the result  
+3. Before experimenting further, save a checkpoint:
+
+```
+File → Save As → network_before_linlog.gephi
+```
+
+4. Then apply additional refinements (LinLog, Noverlap, etc.)
+
+The key takeaway is that layout in Gephi is an exploratory but **non-reversible process**.
+
+Saving intermediate `.gephi` files is the most reliable way to preserve good configurations.
+If you do lose a layout while experimenting, just try to get back to it by applying the former settings. 
+
+### Appearance Settings
+
+After layout, adjust appearance to improve interpretability.
+
+#### Node size
+
+- Size by: **Degree** (or another metric)
+- Reveals hubs and highly connected nodes
+
+#### Node color
+
+- Color by: **Modularity Class**
+- Highlights community structure
+
+#### Edge visibility
+
+- Reduce edge opacity (e.g., 20–40%)
+- Helps reduce “hairball” effect in dense networks
+
+### Working with Thresholded Networks
+
+Networks generated by this repository often vary significantly depending on thresholds.
+
+Different structures may require different layout adjustments:
+
+- **Dense networks (low thresholds)**
+  - increase scaling  
+  - reduce edge weight influence  
+  - lower edge opacity  
+
+- **Mid-density networks (typical analytical range)**
+  - moderate scaling  
+  - standard settings work well  
+
+- **Sparse networks (high thresholds)**
+  - decrease scaling  
+  - increase gravity  
+
+There is no single correct configuration; layout is part of the interpretive process.
+
+### Notes
+
+- Layout affects **visual interpretation**, not the underlying data  
+- Node attributes are stored in the `.gexf` file and can be inspected in the Data Laboratory  
+- Layout results are not preserved unless saved as a `.gephi` project file  
+- Visualization is an exploratory step that complements the analytical outputs of the scripts  
+
+### Why Gephi is Used
+
+Gephi provides:
+
+- interactive exploration of network structure  
+- visual identification of clusters and bridges  
+- inspection of node-level metrics  
+- flexible visualization across different thresholded networks  
+
+It is an essential companion tool for interpreting the outputs of this repository.
+

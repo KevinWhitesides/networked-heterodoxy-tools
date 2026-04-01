@@ -5,6 +5,5 @@ networkx
 scipy
 scikit-learn
 matplotlib
-gensim
 pyLDAvis
 seaborn
