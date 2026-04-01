@@ -2,8 +2,10 @@
 """
 05_find_case_gradients.py
 
-Find discourse gradients between zero-overlap case endpoint pairs using an existing
-zero-overlap table, Jaccard similarity matrix, and original incidence matrix.
+Find discourse gradients between zero-overlap case endpoint pairs using:
+- a zero-overlap table
+- a Jaccard similarity matrix (existing or computed in-script)
+- the original incidence matrix
 
 A discourse gradient is a chain of cases:
 
@@ -14,7 +16,7 @@ such that:
 - adjacent pairs share meaningful overlap
 - the chain moves gradually from A's repertoire toward E's repertoire
 
-This script supports:
+Supports:
 
 Endpoint selection modes
 ------------------------
@@ -68,29 +70,33 @@ Outputs
 
 from __future__ import annotations
 
+import argparse
 from datetime import datetime
-from itertools import combinations
 from pathlib import Path
-from typing import Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 # CONFIG
-# ──────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 
 # Inputs
 ZERO_OVERLAP_CSV = Path("zero_overlap_pairs_with_significance.csv")
-JACCARD_CSV = Path("jaccard_similarity_matrix.csv")
-INCIDENCE_PATH = Path("input_incidence_matrix.xlsx")   # .xlsx or .csv
+JACCARD_MODE = "existing"   # "existing" or "compute"
+JACCARD_CSV = Path("jaccard_similarity_matrix.csv")   # used only if JACCARD_MODE = "existing"
+INCIDENCE_PATH = Path("input_incidence_matrix.xlsx")  # .xlsx/.xls or .csv
 SHEET_NAME = 0
 
 # Incidence matrix structure
 CASE_ID_COLUMN = "Source Title"
 N_METADATA_COLS = 4
 PRESENCE_TOKEN = "X"
+
+# Optional feature filtering used only when computing Jaccard internally
+GLOBAL_FEATURE_MIN_CASES = 1
 
 # Endpoint selection
 ENDPOINT_MODE = "significant"     # "all", "significant", or "specific"
@@ -110,13 +116,13 @@ MAX_CHAIN_LENGTH = 6              # used only if CHAIN_LENGTH_MODE = "range"
 SEARCH_MODE = "ranked"            # "strict" or "ranked"
 
 # Adjacency strength requirements
-MIN_ADJ = 0.20                    # minimum Jaccard for each adjacent pair
-MIN_INTERSECTION = 0              # set > 0 to require minimum shared features per adjacent pair
+MIN_ADJ = 0.20
+MIN_INTERSECTION = 0
 
 # Beam search / output
-BEAM_WIDTH = 20                   # near-ideal candidates kept per interior target position
-TOP_RESULTS_PER_ENDPOINT = 10     # max chains retained per endpoint pair
-TOP_RESULTS_TOTAL = 100           # total rows written
+BEAM_WIDTH = 20
+TOP_RESULTS_PER_ENDPOINT = 10
+TOP_RESULTS_TOTAL = 100
 
 # Numerical tolerance
 EPS = 1e-9
@@ -127,11 +133,11 @@ OUT_CSV = "case_gradients.csv"
 OUT_SUMMARY = "analysis_summary.txt"
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 # HELPERS: reading and cleaning
-# ──────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 
-def read_table(path: Path, sheet_name=0) -> pd.DataFrame:
+def _read_table(path: Path, sheet_name: int | str = 0) -> pd.DataFrame:
     """Read .xlsx/.xls or .csv as strings, preserving blanks."""
     if not path.exists():
         raise FileNotFoundError(f"Input file not found: {path}")
@@ -140,7 +146,10 @@ def read_table(path: Path, sheet_name=0) -> pd.DataFrame:
     if suffix in [".xlsx", ".xls"]:
         df = pd.read_excel(path, sheet_name=sheet_name, dtype=str, keep_default_na=False)
     elif suffix == ".csv":
-        df = pd.read_csv(path, dtype=str, keep_default_na=False)
+        try:
+            df = pd.read_csv(path, dtype=str, keep_default_na=False)
+        except UnicodeDecodeError:
+            df = pd.read_csv(path, dtype=str, keep_default_na=False, encoding="latin-1")
     else:
         raise ValueError(f"Unsupported input format: {suffix}. Use .xlsx/.xls or .csv.")
 
@@ -148,7 +157,7 @@ def read_table(path: Path, sheet_name=0) -> pd.DataFrame:
     return df
 
 
-def get_feature_columns(df: pd.DataFrame, n_metadata_cols: int) -> List[str]:
+def _get_feature_columns(df: pd.DataFrame, n_metadata_cols: int) -> List[str]:
     if n_metadata_cols < 0 or n_metadata_cols >= df.shape[1]:
         raise ValueError(
             f"N_METADATA_COLS={n_metadata_cols} invalid for table with {df.shape[1]} columns."
@@ -156,7 +165,7 @@ def get_feature_columns(df: pd.DataFrame, n_metadata_cols: int) -> List[str]:
     return list(df.columns[n_metadata_cols:])
 
 
-def binarize_presence(df: pd.DataFrame, feature_cols: Sequence[str], token: str) -> pd.DataFrame:
+def _binarize_presence(df: pd.DataFrame, feature_cols: Sequence[str], token: str) -> pd.DataFrame:
     truthy = {"x", "✓", "check", "true", "1", "y", "yes"}
 
     def to_bin(col: pd.Series) -> pd.Series:
@@ -170,18 +179,91 @@ def binarize_presence(df: pd.DataFrame, feature_cols: Sequence[str], token: str)
             else 0
         ).astype(np.uint8)
 
-    return df[feature_cols].apply(to_bin)
+    return df[list(feature_cols)].apply(to_bin)
 
 
-def normalize_pair(a: str, b: str) -> Tuple[str, str]:
+def _normalize_pair(a: str, b: str) -> Tuple[str, str]:
     return (a, b) if a <= b else (b, a)
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# HELPERS: chain evaluation
-# ──────────────────────────────────────────────────────────────────────────────
+def _prepare_incidence(
+    incidence_path: Path,
+    *,
+    sheet_name: int | str,
+    case_id_column: str,
+    n_metadata_cols: int,
+    presence_token: str,
+    global_feature_min_cases: int,
+) -> Tuple[List[str], pd.DataFrame]:
+    """
+    Return:
+        case_order, binary feature dataframe indexed by case_id
+    """
+    inc_raw = _read_table(incidence_path, sheet_name=sheet_name)
+    if case_id_column not in inc_raw.columns:
+        raise ValueError(f"CASE_ID_COLUMN '{case_id_column}' not found in {incidence_path}")
 
-def t_coord_all(case_order: List[str], jmat_df: pd.DataFrame, a: str, e: str) -> pd.Series:
+    producer_index = inc_raw.columns.get_loc(case_id_column)
+    if producer_index >= n_metadata_cols:
+        raise ValueError(
+            f"CASE_ID_COLUMN '{case_id_column}' is outside the first {n_metadata_cols} columns.\n"
+            "This script assumes that all metadata columns appear to the LEFT of the feature columns."
+        )
+
+    feature_cols = _get_feature_columns(inc_raw, n_metadata_cols)
+    inc = pd.concat([inc_raw[[case_id_column]], inc_raw[feature_cols]], axis=1).copy()
+    bin_features = _binarize_presence(inc, feature_cols, presence_token)
+    bin_df = pd.concat([inc[[case_id_column]].copy(), bin_features], axis=1)
+    bin_df[case_id_column] = bin_df[case_id_column].astype(str)
+
+    if global_feature_min_cases > 1:
+        feat_freq = bin_df.drop(columns=[case_id_column]).sum(axis=0)
+        keep_features = feat_freq[feat_freq >= global_feature_min_cases].index.tolist()
+        if not keep_features:
+            raise ValueError("No features remain after GLOBAL_FEATURE_MIN_CASES filter.")
+        bin_df = pd.concat([bin_df[[case_id_column]], bin_df[keep_features]], axis=1)
+
+    case_order = bin_df[case_id_column].astype(str).tolist()
+    bin_df = bin_df.set_index(case_id_column)
+
+    return case_order, bin_df
+
+
+def _compute_jaccard_matrix(case_order: List[str], X: np.ndarray) -> pd.DataFrame:
+    """Case × case Jaccard matrix."""
+    n = len(case_order)
+    mat = np.zeros((n, n), dtype=float)
+
+    for i in range(n):
+        ai = X[i]
+        for j in range(i, n):
+            inter = int(np.bitwise_and(ai, X[j]).sum())
+            union = int(np.bitwise_or(ai, X[j]).sum())
+            jacc = inter / union if union > 0 else 0.0
+            mat[i, j] = jacc
+            mat[j, i] = jacc
+
+    return pd.DataFrame(mat, index=case_order, columns=case_order)
+
+
+def _build_intersection_matrix(case_order: List[str], X: np.ndarray) -> pd.DataFrame:
+    """Case × case raw intersection counts."""
+    n = len(case_order)
+    mat = np.zeros((n, n), dtype=int)
+    for i in range(n):
+        ai = X[i]
+        for j in range(i, n):
+            inter = int(np.bitwise_and(ai, X[j]).sum())
+            mat[i, j] = inter
+            mat[j, i] = inter
+    return pd.DataFrame(mat, index=case_order, columns=case_order)
+
+
+# =============================================================================
+# HELPERS: chain evaluation
+# =============================================================================
+
+def _t_coord_all(case_order: List[str], jmat_df: pd.DataFrame, a: str, e: str) -> pd.Series:
     """
     Projection coordinate:
         t(x) = (J(x,A) - J(x,E)) / (J(x,A) + J(x,E))
@@ -191,17 +273,25 @@ def t_coord_all(case_order: List[str], jmat_df: pd.DataFrame, a: str, e: str) ->
     return (sA - sE) / (sA + sE + 1e-12)
 
 
-def adjacency_passes(chain: List[str], jmat_df: pd.DataFrame, imat_df: pd.DataFrame) -> bool:
+def _adjacency_passes(
+    chain: List[str],
+    jmat_df: pd.DataFrame,
+    imat_df: pd.DataFrame,
+    *,
+    min_adj: float,
+    min_intersection: int,
+    eps: float,
+) -> bool:
     """Hard adjacency requirements used in both strict and ranked modes."""
     for u, v in zip(chain[:-1], chain[1:]):
-        if float(jmat_df.loc[u, v]) + EPS < MIN_ADJ:
+        if float(jmat_df.loc[u, v]) + eps < min_adj:
             return False
-        if MIN_INTERSECTION > 0 and int(imat_df.loc[u, v]) < MIN_INTERSECTION:
+        if min_intersection > 0 and int(imat_df.loc[u, v]) < min_intersection:
             return False
     return True
 
 
-def strict_gradient_ok(chain: List[str], jmat_df: pd.DataFrame) -> bool:
+def _strict_gradient_ok(chain: List[str], jmat_df: pd.DataFrame, *, eps: float) -> bool:
     """
     Strict mode:
     - similarity to A strictly decreases
@@ -214,15 +304,12 @@ def strict_gradient_ok(chain: List[str], jmat_df: pd.DataFrame) -> bool:
     sA = [float(jmat_df.loc[x, A]) for x in chain]
     sE = [float(jmat_df.loc[x, E]) for x in chain]
 
-    # strict monotone to A (descending)
-    if not all(sA[k] > sA[k + 1] + EPS for k in range(len(chain) - 1)):
+    if not all(sA[k] > sA[k + 1] + eps for k in range(len(chain) - 1)):
         return False
 
-    # strict monotone to E (ascending)
-    if not all(sE[k] + EPS < sE[k + 1] for k in range(len(chain) - 1)):
+    if not all(sE[k] + eps < sE[k + 1] for k in range(len(chain) - 1)):
         return False
 
-    # neighborhood dominance
     m = len(chain)
     for i in range(m):
         prev = None
@@ -231,14 +318,14 @@ def strict_gradient_ok(chain: List[str], jmat_df: pd.DataFrame) -> bool:
             if j >= m:
                 break
             val = float(jmat_df.loc[chain[i], chain[j]])
-            if prev is not None and not (prev > val + EPS):
+            if prev is not None and not (prev > val + eps):
                 return False
             prev = val
 
     return True
 
 
-def ranked_chain_score(chain: List[str], jmat_df: pd.DataFrame, t_map: pd.Series) -> Dict[str, float]:
+def _ranked_chain_score(chain: List[str], jmat_df: pd.DataFrame, t_map: pd.Series, *, eps: float) -> Dict[str, float]:
     """
     Ranked mode score components:
     - adjacency strength
@@ -251,12 +338,10 @@ def ranked_chain_score(chain: List[str], jmat_df: pd.DataFrame, t_map: pd.Series
     E = chain[-1]
     m = len(chain)
 
-    # Adjacent similarities
     adj_js = [float(jmat_df.loc[u, v]) for u, v in zip(chain[:-1], chain[1:])]
     min_adj = min(adj_js)
     adj_sum = sum(adj_js)
 
-    # Monotonicity penalties
     sA = [float(jmat_df.loc[x, A]) for x in chain]
     sE = [float(jmat_df.loc[x, E]) for x in chain]
 
@@ -266,19 +351,14 @@ def ranked_chain_score(chain: List[str], jmat_df: pd.DataFrame, t_map: pd.Series
     mono_E_mag = 0.0
 
     for k in range(m - 1):
-        # Want sA[k] > sA[k+1]
-        if not (sA[k] > sA[k + 1] + EPS):
+        if not (sA[k] > sA[k + 1] + eps):
             mono_A_viol += 1
             mono_A_mag += max(0.0, sA[k + 1] - sA[k])
 
-        # Want sE[k] < sE[k+1]
-        if not (sE[k] + EPS < sE[k + 1]):
+        if not (sE[k] + eps < sE[k + 1]):
             mono_E_viol += 1
             mono_E_mag += max(0.0, sE[k] - sE[k + 1])
 
-    # Positional smoothness: compare interior nodes to ideal t targets
-    # Interior target positions evenly spaced between +1 and -1
-    # Example m=5 => [0.5, 0.0, -0.5]
     if m <= 2:
         smooth_penalty = 0.0
     else:
@@ -286,7 +366,6 @@ def ranked_chain_score(chain: List[str], jmat_df: pd.DataFrame, t_map: pd.Series
         actuals = np.array([float(t_map.loc[x]) for x in chain[1:-1]])
         smooth_penalty = float(np.abs(actuals - targets).sum())
 
-    # Total score: reward strong adjacency, penalize violations and poor smoothness
     total_score = (
         (2.0 * min_adj) +
         (1.0 * adj_sum) -
@@ -309,14 +388,16 @@ def ranked_chain_score(chain: List[str], jmat_df: pd.DataFrame, t_map: pd.Series
     }
 
 
-def chain_to_record(
+def _chain_to_record(
     chain: List[str],
+    *,
     endpoint_mode: str,
     sig_col: str,
     search_mode: str,
     jmat_df: pd.DataFrame,
     imat_df: pd.DataFrame,
     t_map: pd.Series,
+    eps: float,
 ) -> Dict[str, object]:
     """Create one output row for a chain."""
     record: Dict[str, object] = {
@@ -329,163 +410,180 @@ def chain_to_record(
         "chain": " | ".join(chain),
     }
 
-    # Case columns
     for idx, case in enumerate(chain, start=1):
         record[f"case_{idx}"] = case
 
-    # Adjacent Jaccard / intersections
     adj_pairs = list(zip(chain[:-1], chain[1:]))
     for idx, (u, v) in enumerate(adj_pairs, start=1):
         record[f"adj_{idx}_pair"] = f"{u} -> {v}"
         record[f"adj_{idx}_jaccard"] = round(float(jmat_df.loc[u, v]), 6)
         record[f"adj_{idx}_intersection"] = int(imat_df.loc[u, v])
 
-    # Similarity sequences to endpoints
     sA = [round(float(jmat_df.loc[x, chain[0]]), 6) for x in chain]
     sE = [round(float(jmat_df.loc[x, chain[-1]]), 6) for x in chain]
     record["sim_to_A_seq"] = str(sA)
     record["sim_to_E_seq"] = str(sE)
 
-    # t-coordinates for interior nodes
     if len(chain) > 2:
         record["interior_t_seq"] = str([round(float(t_map.loc[x]), 6) for x in chain[1:-1]])
     else:
         record["interior_t_seq"] = "[]"
 
-    # Strict pass (useful to report even in strict mode)
-    record["strict_pass"] = strict_gradient_ok(chain, jmat_df)
-
-    # Ranked score fields
-    score_fields = ranked_chain_score(chain, jmat_df, t_map)
-    record.update(score_fields)
+    record["strict_pass"] = _strict_gradient_ok(chain, jmat_df, eps=eps)
+    record.update(_ranked_chain_score(chain, jmat_df, t_map, eps=eps))
 
     return record
 
 
-def build_intersection_matrix(case_order: List[str], X: np.ndarray) -> pd.DataFrame:
-    """Case × case raw intersection counts."""
-    n = len(case_order)
-    mat = np.zeros((n, n), dtype=int)
-    for i in range(n):
-        ai = X[i]
-        for j in range(i, n):
-            inter = int(np.bitwise_and(ai, X[j]).sum())
-            mat[i, j] = inter
-            mat[j, i] = inter
-    return pd.DataFrame(mat, index=case_order, columns=case_order)
+# =============================================================================
+# PIPELINE ENTRY POINT
+# =============================================================================
 
-
-# ──────────────────────────────────────────────────────────────────────────────
-# MAIN
-# ──────────────────────────────────────────────────────────────────────────────
-
-def main() -> None:
+def run(
+    *,
+    zero_overlap_csv: Path,
+    incidence_path: Path,
+    output_dir: Path,
+    jaccard_mode: str = "existing",            # "existing" or "compute"
+    jaccard_csv: Optional[Path] = None,        # used only if jaccard_mode="existing"
+    sheet_name: int | str = 0,
+    case_id_column: str = "Source Title",
+    n_metadata_cols: int = 4,
+    presence_token: str = "X",
+    global_feature_min_cases: int = 1,
+    endpoint_mode: str = "significant",        # "all", "significant", or "specific"
+    significance_column: str = "sig_0.05",
+    specific_case_a: str = "",
+    specific_case_e: str = "",
+    chain_length_mode: str = "fixed",          # "fixed" or "range"
+    chain_length: int = 5,
+    min_chain_length: int = 4,
+    max_chain_length: int = 6,
+    search_mode: str = "ranked",               # "strict" or "ranked"
+    min_adj: float = 0.20,
+    min_intersection: int = 0,
+    beam_width: int = 20,
+    top_results_per_endpoint: int = 10,
+    top_results_total: int = 100,
+    eps: float = 1e-9,
+    out_csv_name: str = "case_gradients.csv",
+    out_summary_name: str = "analysis_summary.txt",
+) -> Dict[str, Any]:
+    """
+    Run case gradient search and return a structured result dictionary.
+    """
     run_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    # ─── Read zero-overlap table ──────────────────────────────────────────────
-    if not ZERO_OVERLAP_CSV.exists():
-        raise FileNotFoundError(f"Zero-overlap CSV not found: {ZERO_OVERLAP_CSV}")
+    if endpoint_mode not in {"all", "significant", "specific"}:
+        raise ValueError("endpoint_mode must be 'all', 'significant', or 'specific'.")
 
-    zero_df = pd.read_csv(ZERO_OVERLAP_CSV)
+    if chain_length_mode not in {"fixed", "range"}:
+        raise ValueError("chain_length_mode must be 'fixed' or 'range'.")
 
+    if search_mode not in {"strict", "ranked"}:
+        raise ValueError("search_mode must be 'strict' or 'ranked'.")
+
+    if jaccard_mode not in {"existing", "compute"}:
+        raise ValueError("jaccard_mode must be 'existing' or 'compute'.")
+
+    if jaccard_mode == "existing" and (jaccard_csv is None or not jaccard_csv.exists()):
+        raise ValueError("For jaccard_mode='existing', a valid jaccard_csv must be supplied.")
+
+    # --- Read zero-overlap table
+    if not zero_overlap_csv.exists():
+        raise FileNotFoundError(f"Zero-overlap CSV not found: {zero_overlap_csv}")
+
+    zero_df = pd.read_csv(zero_overlap_csv)
     required_zero_cols = {"case_A", "case_B"}
     if not required_zero_cols.issubset(zero_df.columns):
         raise ValueError(
-            f"{ZERO_OVERLAP_CSV} must contain columns: {sorted(required_zero_cols)}"
+            f"{zero_overlap_csv} must contain columns: {sorted(required_zero_cols)}"
         )
-
-    # Normalize pair order
     zero_df[["case_A", "case_B"]] = zero_df[["case_A", "case_B"]].astype(str)
 
-    # ─── Read Jaccard matrix ─────────────────────────────────────────────────
-    if not JACCARD_CSV.exists():
-        raise FileNotFoundError(f"Jaccard CSV not found: {JACCARD_CSV}")
+    # --- Prepare incidence once
+    case_order_inc, bin_df = _prepare_incidence(
+        incidence_path,
+        sheet_name=sheet_name,
+        case_id_column=case_id_column,
+        n_metadata_cols=n_metadata_cols,
+        presence_token=presence_token,
+        global_feature_min_cases=global_feature_min_cases,
+    )
 
-    jmat_df = pd.read_csv(JACCARD_CSV, index_col=0)
-    jmat_df.index = jmat_df.index.map(str)
-    jmat_df.columns = jmat_df.columns.map(str)
+    # --- Jaccard handling
+    computed_jaccard_csv_path: Optional[Path] = None
 
-    if list(jmat_df.index) != list(jmat_df.columns):
-        raise ValueError("JACCARD_CSV must be a square matrix with matching row/column labels.")
+    if jaccard_mode == "existing":
+        jmat_df = pd.read_csv(jaccard_csv, index_col=0)  # type: ignore[arg-type]
+        jmat_df.index = jmat_df.index.map(str)
+        jmat_df.columns = jmat_df.columns.map(str)
 
-    case_order = list(jmat_df.index)
+        if list(jmat_df.index) != list(jmat_df.columns):
+            raise ValueError("JACCARD_CSV must be a square matrix with matching row/column labels.")
 
-    # ─── Read incidence matrix for intersections ─────────────────────────────
-    inc_raw = read_table(INCIDENCE_PATH, sheet_name=SHEET_NAME)
-    if CASE_ID_COLUMN not in inc_raw.columns:
-        raise ValueError(f"CASE_ID_COLUMN '{CASE_ID_COLUMN}' not found in {INCIDENCE_PATH}")
+        case_order = list(jmat_df.index)
 
-    producer_index = inc_raw.columns.get_loc(CASE_ID_COLUMN)
-    if producer_index >= N_METADATA_COLS:
-        raise ValueError(
-            f"CASE_ID_COLUMN '{CASE_ID_COLUMN}' is outside the first {N_METADATA_COLS} columns.\n"
-            "This script assumes that all metadata columns appear to the LEFT of the feature columns."
-        )
+        # Keep only cases that appear in the Jaccard matrix
+        bin_df = bin_df[bin_df.index.isin(case_order)].copy()
+        bin_df = bin_df.reindex(case_order)
+        if bin_df.isna().any().any():
+            missing_cases = bin_df.index[bin_df.isna().any(axis=1)].tolist()
+            raise ValueError(
+                "Some cases in the Jaccard matrix are missing from the incidence matrix after alignment: "
+                f"{missing_cases[:10]}"
+            )
 
-    feature_cols = get_feature_columns(inc_raw, N_METADATA_COLS)
-    inc = pd.concat([inc_raw[[CASE_ID_COLUMN]], inc_raw[feature_cols]], axis=1).copy()
-    bin_features = binarize_presence(inc, feature_cols, PRESENCE_TOKEN)
-    bin_df = pd.concat([inc[[CASE_ID_COLUMN]].copy(), bin_features], axis=1)
-    bin_df[CASE_ID_COLUMN] = bin_df[CASE_ID_COLUMN].astype(str)
+    else:
+        case_order = case_order_inc
+        X_tmp = bin_df.values.astype(np.uint8)
+        jmat_df = _compute_jaccard_matrix(case_order, X_tmp)
+        computed_jaccard_csv_path = output_dir / "jaccard_similarity_matrix.csv"
+        jmat_df.to_csv(computed_jaccard_csv_path, encoding="utf-8")
 
-    # Keep only cases that appear in the Jaccard matrix
-    bin_df = bin_df[bin_df[CASE_ID_COLUMN].isin(case_order)].copy()
-
-    # Reindex to match Jaccard order
-    bin_df = bin_df.set_index(CASE_ID_COLUMN).reindex(case_order)
-    if bin_df.isna().any().any():
-        missing_cases = bin_df.index[bin_df.isna().any(axis=1)].tolist()
-        raise ValueError(
-            "Some cases in the Jaccard matrix are missing from the incidence matrix after alignment: "
-            f"{missing_cases[:10]}"
-        )
-
+    # --- Build intersections aligned to case_order
+    bin_df = bin_df.reindex(case_order)
     X = bin_df.values.astype(np.uint8)
-    imat_df = build_intersection_matrix(case_order, X)
+    imat_df = _build_intersection_matrix(case_order, X)
 
-    # ─── Endpoint selection ───────────────────────────────────────────────────
-    if ENDPOINT_MODE not in {"all", "significant", "specific"}:
-        raise ValueError("ENDPOINT_MODE must be 'all', 'significant', or 'specific'.")
-
-    if ENDPOINT_MODE == "all":
+    # --- Endpoint selection
+    if endpoint_mode == "all":
         endpoint_df = zero_df.copy()
 
-    elif ENDPOINT_MODE == "significant":
-        if SIGNIFICANCE_COLUMN not in zero_df.columns:
+    elif endpoint_mode == "significant":
+        if significance_column not in zero_df.columns:
             raise ValueError(
-                f"SIGNIFICANCE_COLUMN '{SIGNIFICANCE_COLUMN}' not found in {ZERO_OVERLAP_CSV}"
+                f"significance_column '{significance_column}' not found in {zero_overlap_csv}"
             )
-        endpoint_df = zero_df[zero_df[SIGNIFICANCE_COLUMN].astype(bool)].copy()
+        endpoint_df = zero_df[zero_df[significance_column].astype(bool)].copy()
 
-    else:  # specific
-        if not SPECIFIC_CASE_A or not SPECIFIC_CASE_E:
+    else:
+        if not specific_case_a or not specific_case_e:
             raise ValueError(
-                "For ENDPOINT_MODE='specific', set both SPECIFIC_CASE_A and SPECIFIC_CASE_E."
+                "For endpoint_mode='specific', set both specific_case_a and specific_case_e."
             )
 
-        a, e = normalize_pair(str(SPECIFIC_CASE_A), str(SPECIFIC_CASE_E))
+        a, e = _normalize_pair(str(specific_case_a), str(specific_case_e))
         pair_mask = (
-            zero_df.apply(lambda r: normalize_pair(str(r["case_A"]), str(r["case_B"])), axis=1) == (a, e)
+            zero_df.apply(lambda r: _normalize_pair(str(r["case_A"]), str(r["case_B"])), axis=1) == (a, e)
         )
         endpoint_df = zero_df[pair_mask].copy()
 
         if endpoint_df.empty:
             raise ValueError(
-                f"The specified pair ({SPECIFIC_CASE_A}, {SPECIFIC_CASE_E}) was not found "
+                f"The specified pair ({specific_case_a}, {specific_case_e}) was not found "
                 "in the zero-overlap table."
             )
 
-    # Normalize endpoint pairs, deduplicate
     endpoint_pairs = []
     seen_pairs = set()
 
     for _, row in endpoint_df.iterrows():
-        a, e = normalize_pair(str(row["case_A"]), str(row["case_B"]))
+        a, e = _normalize_pair(str(row["case_A"]), str(row["case_B"]))
         if a not in case_order or e not in case_order:
             continue
-        # Double-check zero overlap
-        if float(jmat_df.loc[a, e]) > EPS:
+        if float(jmat_df.loc[a, e]) > eps:
             continue
         if (a, e) not in seen_pairs:
             seen_pairs.add((a, e))
@@ -494,41 +592,36 @@ def main() -> None:
     if not endpoint_pairs:
         raise ValueError("No valid zero-overlap endpoint pairs remained after filtering.")
 
-    # ─── Chain lengths ────────────────────────────────────────────────────────
-    if CHAIN_LENGTH_MODE not in {"fixed", "range"}:
-        raise ValueError("CHAIN_LENGTH_MODE must be 'fixed' or 'range'.")
-
-    if CHAIN_LENGTH_MODE == "fixed":
-        chain_lengths = [CHAIN_LENGTH]
+    # --- Chain lengths
+    if chain_length_mode == "fixed":
+        chain_lengths = [chain_length]
     else:
-        chain_lengths = list(range(MIN_CHAIN_LENGTH, MAX_CHAIN_LENGTH + 1))
+        chain_lengths = list(range(min_chain_length, max_chain_length + 1))
 
     if min(chain_lengths) < 3:
         raise ValueError("Minimum chain length must be at least 3.")
     if max(chain_lengths) > len(case_order):
         raise ValueError("Chain length exceeds number of available cases.")
 
-    # ─── Search ───────────────────────────────────────────────────────────────
+    # --- Search
     all_records: List[Dict[str, object]] = []
     discard_adj = 0
     discard_strict = 0
     endpoint_with_results = 0
 
     for a, e in endpoint_pairs:
-        t_map = t_coord_all(case_order, jmat_df, a, e)
+        t_map = _t_coord_all(case_order, jmat_df, a, e)
         pool_idx = [k for k, c in enumerate(case_order) if c not in (a, e)]
 
         endpoint_records: List[Dict[str, object]] = []
 
-        for chain_len in chain_lengths:
-            n_interior = chain_len - 2
+        for current_chain_len in chain_lengths:
+            n_interior = current_chain_len - 2
             if n_interior <= 0:
                 continue
 
-            # Interior target positions between +1 and -1
-            targets = np.linspace(1, -1, chain_len)[1:-1]
+            targets = np.linspace(1, -1, current_chain_len)[1:-1]
 
-            # For each interior position, build a beam of nearby cases
             beams: List[List[str]] = []
             for tgt in targets:
                 ranked_cases = sorted(
@@ -537,41 +630,44 @@ def main() -> None:
                         abs(float(t_map.loc[c]) - tgt),
                         -float(jmat_df.loc[c, a]),
                         float(jmat_df.loc[c, e]),
-                    )
+                    ),
                 )
-                beams.append(ranked_cases[:BEAM_WIDTH])
+                beams.append(ranked_cases[:beam_width])
 
-            # Cartesian search over beams
-            # We use product-like nested logic with combinations by recursion
             def recurse_build(pos: int, partial: List[str]) -> None:
                 nonlocal discard_adj, discard_strict, endpoint_records
 
                 if pos == len(beams):
                     chain = [a] + partial + [e]
 
-                    # Distinctness
                     if len(set(chain)) != len(chain):
                         return
 
-                    # Hard adjacency filter
-                    if not adjacency_passes(chain, jmat_df, imat_df):
+                    if not _adjacency_passes(
+                        chain,
+                        jmat_df,
+                        imat_df,
+                        min_adj=min_adj,
+                        min_intersection=min_intersection,
+                        eps=eps,
+                    ):
                         discard_adj += 1
                         return
 
-                    # Search mode handling
-                    if SEARCH_MODE == "strict":
-                        if not strict_gradient_ok(chain, jmat_df):
+                    if search_mode == "strict":
+                        if not _strict_gradient_ok(chain, jmat_df, eps=eps):
                             discard_strict += 1
                             return
 
-                    record = chain_to_record(
-                        chain=chain,
-                        endpoint_mode=ENDPOINT_MODE,
-                        sig_col=SIGNIFICANCE_COLUMN,
-                        search_mode=SEARCH_MODE,
+                    record = _chain_to_record(
+                        chain,
+                        endpoint_mode=endpoint_mode,
+                        sig_col=significance_column,
+                        search_mode=search_mode,
                         jmat_df=jmat_df,
                         imat_df=imat_df,
                         t_map=t_map,
+                        eps=eps,
                     )
                     endpoint_records.append(record)
                     return
@@ -585,27 +681,25 @@ def main() -> None:
 
         if endpoint_records:
             endpoint_with_results += 1
-
-            # Ranking within endpoint
             endpoint_df_rec = pd.DataFrame(endpoint_records)
 
-            if SEARCH_MODE == "strict":
+            if search_mode == "strict":
                 endpoint_df_rec = endpoint_df_rec.sort_values(
                     by=["min_adj", "adj_sum"],
-                    ascending=[False, False]
+                    ascending=[False, False],
                 )
             else:
                 endpoint_df_rec = endpoint_df_rec.sort_values(
                     by=["total_score", "min_adj", "adj_sum"],
-                    ascending=[False, False, False]
+                    ascending=[False, False, False],
                 )
 
-            endpoint_df_rec = endpoint_df_rec.head(TOP_RESULTS_PER_ENDPOINT)
+            endpoint_df_rec = endpoint_df_rec.head(top_results_per_endpoint)
             all_records.extend(endpoint_df_rec.to_dict(orient="records"))
 
-    # ─── Final output ─────────────────────────────────────────────────────────
-    out_csv_path = OUTPUT_DIR / OUT_CSV
-    out_summary_path = OUTPUT_DIR / OUT_SUMMARY
+    # --- Final output
+    out_csv_path = output_dir / out_csv_name
+    out_summary_path = output_dir / out_summary_name
 
     if not all_records:
         empty_df = pd.DataFrame(columns=[
@@ -622,67 +716,79 @@ def main() -> None:
             f.write("No case gradients were found under the current settings.\n\n")
             f.write("Inputs\n")
             f.write("------\n")
-            f.write(f"Zero-overlap CSV: {ZERO_OVERLAP_CSV}\n")
-            f.write(f"Jaccard CSV: {JACCARD_CSV}\n")
-            f.write(f"Incidence matrix: {INCIDENCE_PATH}\n")
+            f.write(f"Zero-overlap CSV: {zero_overlap_csv}\n")
+            f.write(f"Jaccard mode: {jaccard_mode}\n")
+            if jaccard_mode == "existing":
+                f.write(f"Jaccard CSV: {jaccard_csv}\n")
+            else:
+                f.write(f"Jaccard CSV (computed): {computed_jaccard_csv_path}\n")
+            f.write(f"Incidence matrix: {incidence_path}\n")
 
-        print("No case gradients found under the current settings.")
-        print(f"Wrote empty CSV: {out_csv_path}")
-        print(f"Wrote summary:   {out_summary_path}")
-        return
+        return {
+            "run_timestamp": run_timestamp,
+            "output_dir": str(output_dir),
+            "gradients_csv": str(out_csv_path),
+            "summary_txt": str(out_summary_path),
+            "rows_written": 0,
+            "endpoint_pairs": len(endpoint_pairs),
+            "endpoint_pairs_with_results": 0,
+            "computed_jaccard_csv": str(computed_jaccard_csv_path) if computed_jaccard_csv_path else None,
+        }
 
     out_df = pd.DataFrame(all_records)
 
-    # Global ranking
-    if SEARCH_MODE == "strict":
+    if search_mode == "strict":
         out_df = out_df.sort_values(
             by=["min_adj", "adj_sum"],
-            ascending=[False, False]
+            ascending=[False, False],
         )
     else:
         out_df = out_df.sort_values(
             by=["total_score", "min_adj", "adj_sum"],
-            ascending=[False, False, False]
+            ascending=[False, False, False],
         )
 
-    out_df = out_df.head(TOP_RESULTS_TOTAL).reset_index(drop=True)
+    out_df = out_df.head(top_results_total).reset_index(drop=True)
     out_df.to_csv(out_csv_path, index=False, encoding="utf-8")
 
-    # Summary
     with open(out_summary_path, "w", encoding="utf-8") as f:
         f.write("=== Case Gradient Search Summary ===\n\n")
         f.write(f"Run timestamp: {run_timestamp}\n\n")
 
         f.write("Inputs\n")
         f.write("------\n")
-        f.write(f"Zero-overlap CSV: {ZERO_OVERLAP_CSV}\n")
-        f.write(f"Jaccard CSV: {JACCARD_CSV}\n")
-        f.write(f"Incidence matrix: {INCIDENCE_PATH}\n\n")
+        f.write(f"Zero-overlap CSV: {zero_overlap_csv}\n")
+        f.write(f"Jaccard mode: {jaccard_mode}\n")
+        if jaccard_mode == "existing":
+            f.write(f"Jaccard CSV: {jaccard_csv}\n")
+        else:
+            f.write(f"Jaccard CSV (computed): {computed_jaccard_csv_path}\n")
+        f.write(f"Incidence matrix: {incidence_path}\n\n")
 
         f.write("Endpoint settings\n")
         f.write("-----------------\n")
-        f.write(f"ENDPOINT_MODE: {ENDPOINT_MODE}\n")
-        if ENDPOINT_MODE == "significant":
-            f.write(f"SIGNIFICANCE_COLUMN: {SIGNIFICANCE_COLUMN}\n")
-        if ENDPOINT_MODE == "specific":
-            f.write(f"SPECIFIC_CASE_A: {SPECIFIC_CASE_A}\n")
-            f.write(f"SPECIFIC_CASE_E: {SPECIFIC_CASE_E}\n")
+        f.write(f"ENDPOINT_MODE: {endpoint_mode}\n")
+        if endpoint_mode == "significant":
+            f.write(f"SIGNIFICANCE_COLUMN: {significance_column}\n")
+        if endpoint_mode == "specific":
+            f.write(f"SPECIFIC_CASE_A: {specific_case_a}\n")
+            f.write(f"SPECIFIC_CASE_E: {specific_case_e}\n")
         f.write(f"Endpoint pairs searched: {len(endpoint_pairs)}\n\n")
 
         f.write("Chain settings\n")
         f.write("--------------\n")
-        f.write(f"CHAIN_LENGTH_MODE: {CHAIN_LENGTH_MODE}\n")
-        if CHAIN_LENGTH_MODE == "fixed":
-            f.write(f"CHAIN_LENGTH: {CHAIN_LENGTH}\n")
+        f.write(f"CHAIN_LENGTH_MODE: {chain_length_mode}\n")
+        if chain_length_mode == "fixed":
+            f.write(f"CHAIN_LENGTH: {chain_length}\n")
         else:
-            f.write(f"MIN_CHAIN_LENGTH: {MIN_CHAIN_LENGTH}\n")
-            f.write(f"MAX_CHAIN_LENGTH: {MAX_CHAIN_LENGTH}\n")
-        f.write(f"SEARCH_MODE: {SEARCH_MODE}\n")
-        f.write(f"MIN_ADJ: {MIN_ADJ}\n")
-        f.write(f"MIN_INTERSECTION: {MIN_INTERSECTION}\n")
-        f.write(f"BEAM_WIDTH: {BEAM_WIDTH}\n")
-        f.write(f"TOP_RESULTS_PER_ENDPOINT: {TOP_RESULTS_PER_ENDPOINT}\n")
-        f.write(f"TOP_RESULTS_TOTAL: {TOP_RESULTS_TOTAL}\n\n")
+            f.write(f"MIN_CHAIN_LENGTH: {min_chain_length}\n")
+            f.write(f"MAX_CHAIN_LENGTH: {max_chain_length}\n")
+        f.write(f"SEARCH_MODE: {search_mode}\n")
+        f.write(f"MIN_ADJ: {min_adj}\n")
+        f.write(f"MIN_INTERSECTION: {min_intersection}\n")
+        f.write(f"BEAM_WIDTH: {beam_width}\n")
+        f.write(f"TOP_RESULTS_PER_ENDPOINT: {top_results_per_endpoint}\n")
+        f.write(f"TOP_RESULTS_TOTAL: {top_results_total}\n\n")
 
         f.write("Search results\n")
         f.write("--------------\n")
@@ -690,7 +796,7 @@ def main() -> None:
         f.write(f"Total chains retained before global truncation: {len(all_records)}\n")
         f.write(f"Rows written: {len(out_df)}\n")
         f.write(f"Candidates discarded by adjacency filter: {discard_adj}\n")
-        if SEARCH_MODE == "strict":
+        if search_mode == "strict":
             f.write(f"Candidates discarded by strict gradient rules: {discard_strict}\n")
         f.write("\n")
 
@@ -704,17 +810,104 @@ def main() -> None:
 
         f.write("Output files\n")
         f.write("------------\n")
-        f.write(f"{OUT_CSV}\n")
-        f.write(f"{OUT_SUMMARY}\n")
+        f.write(f"{out_csv_name}\n")
+        f.write(f"{out_summary_name}\n")
+
+    return {
+        "run_timestamp": run_timestamp,
+        "output_dir": str(output_dir),
+        "gradients_csv": str(out_csv_path),
+        "summary_txt": str(out_summary_path),
+        "rows_written": len(out_df),
+        "endpoint_pairs": len(endpoint_pairs),
+        "endpoint_pairs_with_results": endpoint_with_results,
+        "computed_jaccard_csv": str(computed_jaccard_csv_path) if computed_jaccard_csv_path else None,
+    }
+
+
+# =============================================================================
+# CLI
+# =============================================================================
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Find discourse gradients between zero-overlap case endpoint pairs."
+    )
+
+    parser.add_argument("--zero-overlap-csv", type=Path, default=ZERO_OVERLAP_CSV)
+    parser.add_argument("--jaccard-mode", type=str, default=JACCARD_MODE)
+    parser.add_argument("--jaccard-csv", type=Path, default=JACCARD_CSV)
+    parser.add_argument("--incidence-path", type=Path, default=INCIDENCE_PATH)
+    parser.add_argument("--sheet-name", default=SHEET_NAME)
+    parser.add_argument("--case-id-column", type=str, default=CASE_ID_COLUMN)
+    parser.add_argument("--n-metadata-cols", type=int, default=N_METADATA_COLS)
+    parser.add_argument("--presence-token", type=str, default=PRESENCE_TOKEN)
+    parser.add_argument("--global-feature-min-cases", type=int, default=GLOBAL_FEATURE_MIN_CASES)
+
+    parser.add_argument("--endpoint-mode", type=str, default=ENDPOINT_MODE)
+    parser.add_argument("--significance-column", type=str, default=SIGNIFICANCE_COLUMN)
+    parser.add_argument("--specific-case-a", type=str, default=SPECIFIC_CASE_A)
+    parser.add_argument("--specific-case-e", type=str, default=SPECIFIC_CASE_E)
+
+    parser.add_argument("--chain-length-mode", type=str, default=CHAIN_LENGTH_MODE)
+    parser.add_argument("--chain-length", type=int, default=CHAIN_LENGTH)
+    parser.add_argument("--min-chain-length", type=int, default=MIN_CHAIN_LENGTH)
+    parser.add_argument("--max-chain-length", type=int, default=MAX_CHAIN_LENGTH)
+
+    parser.add_argument("--search-mode", type=str, default=SEARCH_MODE)
+    parser.add_argument("--min-adj", type=float, default=MIN_ADJ)
+    parser.add_argument("--min-intersection", type=int, default=MIN_INTERSECTION)
+    parser.add_argument("--beam-width", type=int, default=BEAM_WIDTH)
+    parser.add_argument("--top-results-per-endpoint", type=int, default=TOP_RESULTS_PER_ENDPOINT)
+    parser.add_argument("--top-results-total", type=int, default=TOP_RESULTS_TOTAL)
+
+    parser.add_argument("--output-dir", type=Path, default=OUTPUT_DIR)
+    parser.add_argument("--out-csv", type=str, default=OUT_CSV)
+    parser.add_argument("--out-summary", type=str, default=OUT_SUMMARY)
+
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = _parse_args()
+
+    result = run(
+        zero_overlap_csv=args.zero_overlap_csv,
+        incidence_path=args.incidence_path,
+        output_dir=args.output_dir,
+        jaccard_mode=args.jaccard_mode,
+        jaccard_csv=args.jaccard_csv,
+        sheet_name=args.sheet_name,
+        case_id_column=args.case_id_column,
+        n_metadata_cols=args.n_metadata_cols,
+        presence_token=args.presence_token,
+        global_feature_min_cases=args.global_feature_min_cases,
+        endpoint_mode=args.endpoint_mode,
+        significance_column=args.significance_column,
+        specific_case_a=args.specific_case_a,
+        specific_case_e=args.specific_case_e,
+        chain_length_mode=args.chain_length_mode,
+        chain_length=args.chain_length,
+        min_chain_length=args.min_chain_length,
+        max_chain_length=args.max_chain_length,
+        search_mode=args.search_mode,
+        min_adj=args.min_adj,
+        min_intersection=args.min_intersection,
+        beam_width=args.beam_width,
+        top_results_per_endpoint=args.top_results_per_endpoint,
+        top_results_total=args.top_results_total,
+        out_csv_name=args.out_csv,
+        out_summary_name=args.out_summary,
+    )
 
     print("[✓] Case gradient search complete.")
-    print(f"    Endpoint mode:      {ENDPOINT_MODE}")
-    print(f"    Search mode:        {SEARCH_MODE}")
-    print(f"    Endpoint pairs:     {len(endpoint_pairs)}")
-    print(f"    Pairs with results: {endpoint_with_results}")
-    print(f"    Rows written:       {len(out_df)}")
-    print(f"    Output CSV:         {out_csv_path}")
-    print(f"    Summary:            {out_summary_path}")
+    print(f"    Endpoint pairs:     {result['endpoint_pairs']}")
+    print(f"    Pairs with results: {result['endpoint_pairs_with_results']}")
+    print(f"    Rows written:       {result['rows_written']}")
+    if result["computed_jaccard_csv"] is not None:
+        print(f"    Jaccard CSV:        {result['computed_jaccard_csv']}")
+    print(f"    Output CSV:         {result['gradients_csv']}")
+    print(f"    Summary:            {result['summary_txt']}")
 
 
 if __name__ == "__main__":

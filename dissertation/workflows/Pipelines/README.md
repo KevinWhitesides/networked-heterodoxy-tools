@@ -22,8 +22,8 @@ pipeline represented as a distinct analytical pathway.
 ### Pipeline 1: One-Mode + Topology
 
 **Purpose:**  
-Construct one-mode networks (feature × feature and/or case × case) and analyze
-their structural properties using topology metrics.
+Construct one-mode networks (feature × feature and/or case × case) from the
+incidence matrix and analyze their structural properties using network topology metrics.
 
 **Pipeline script:**  
 `01_one_mode_topology_pipeline.py`
@@ -33,10 +33,22 @@ their structural properties using topology metrics.
 ### Pipeline 2: Jaccard Matrix + Clustering
 
 **Purpose:**  
-Identify similarity structure and group cases based on shared feature repertoires.
+Compute pairwise similarity between cases using Jaccard metrics and identify
+group structure through clustering and similarity-based analysis.
 
 **Pipeline script:**  
 `02_jaccard_pipeline.py`
+
+---
+
+### Pipeline 3: Zero-Overlap Case Suite
+
+**Purpose:**  
+Identify case pairs with no shared features, analyze absence-based network structure,
+and explore discursive gradients connecting otherwise disconnected cases.
+
+**Pipeline script:**  
+`03_case_zero_overlap_pipeline.py`
 
 ---
 
@@ -239,6 +251,132 @@ The pipeline will:
 
 ---
 
+### Pipeline 3: Zero-Overlap Case Suite
+
+**Purpose:**  
+Identify, evaluate, and structurally analyze **case pairs with no shared features**, and explore the **discursive pathways (gradients)** that connect them.
+
+This pipeline operationalizes **absence structure** in the dataset, moving from:
+- zero-overlap detection  
+→ to absence networks  
+→ to graded transitional chains between otherwise disconnected cases  
+
+---
+
+## Steps
+
+1. **Significant zero-overlap analysis**  
+   → `03_similarity/04_significant_zero_case_overlap.py`  
+   - Identifies case pairs with zero shared features  
+   - Uses null-model sampling to estimate expected zero-overlap frequency  
+   - Computes empirical p-values and FDR-corrected significance  
+   - Outputs full zero-overlap table with significance columns  
+
+2. **Absence network construction**  
+   → `02_networks/03_build_case_absence_networks.py`  
+   - Builds case × case absence graph from significant zero-overlap pairs  
+   - Filters cases by minimum number of zero-overlap neighbors  
+   - Builds complementary case × feature bipartite graph  
+   - Outputs network files and summary  
+
+3. **Case gradient search**  
+   → `03_similarity/05_find_case_gradients.py`  
+   - Identifies chains connecting zero-overlap endpoint pairs  
+   - Uses Jaccard similarity as a continuous “bridge” metric  
+   - Supports:
+     - strict gradient mode (strong monotonic constraints)  
+     - ranked gradient mode (scored transitions)  
+   - Can:
+     - use an existing Jaccard matrix  
+     - or compute one internally  
+   - Outputs ranked gradient chains and summary  
+
+4. **Gradient network construction (optional)**  
+   → `02_networks/04_build_case_gradient_networks.py`  
+   - Selects a single gradient chain  
+   - Builds case × feature bipartite graph for that chain  
+   - Computes within-chain Jaccard diagnostics  
+   - Outputs network, matrices, and visualization  
+
+---
+
+## Inputs
+
+- Binary incidence matrix (case × feature)
+- Metadata columns allowed at the beginning of the file
+- Presence marked with a token (default: `"X"`)
+
+---
+
+## Outputs
+
+    03_case_zero_overlap_pipeline_YYYYMMDD_HHMMSS/
+        01_significant_zero_overlap/
+        02_absence_networks/
+        03_case_gradients/
+        04_gradient_network/    # optional
+        pipeline_summary.txt
+
+---
+
+## Gradient Modes
+
+The gradient stage supports flexible execution:
+
+### Jaccard handling
+
+- `"compute"` → compute Jaccard internally (default)
+- `"existing"` → use precomputed Jaccard matrix (e.g. from Pipeline 2)
+
+### Endpoint selection
+
+- `"all"` → all zero-overlap pairs  
+- `"significant"` → only statistically significant pairs (default)  
+- `"specific"` → user-defined pair  
+
+### Gradient search modes
+
+- **Strict**
+  - Enforces monotonic progression between endpoints  
+  - Produces fewer, highly constrained chains  
+
+- **Ranked**
+  - Scores candidate chains by:
+    - adjacency strength  
+    - monotonicity quality  
+    - positional smoothness  
+  - Produces richer exploratory output  
+
+### Gradient network stage (optional)
+
+- `"skip"` → do not construct a network  
+- `"top_row"` → use highest-ranked gradient (default)  
+- `"specific_endpoints"` → build network for chosen pair  
+
+---
+
+## Running the Pipeline
+
+    python workflows/pipelines/03_case_zero_overlap_pipeline.py
+
+The pipeline will:
+
+- compute significant zero-overlap pairs  
+- build absence networks  
+- identify gradient chains  
+- optionally construct a gradient network  
+- organize outputs into structured subfolders  
+- generate a top-level summary file  
+
+---
+
+## Notes
+
+- This pipeline complements Pipeline 2 by focusing on **absence rather than similarity**
+- It enables analysis of **structural disconnection and transitional pathways**
+- The gradient stage provides a bridge between:
+  - discrete absence (zero overlap)  
+  - continuous similarity (Jaccard space)
 ## Notes
 
 - Pipelines call the underlying scripts directly via their `run(...)` functions
