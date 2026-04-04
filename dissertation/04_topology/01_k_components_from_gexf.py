@@ -80,6 +80,30 @@ OUT_SUMMARY = "analysis_summary.txt"
 
 
 # =============================================================================
+# Progress-print helpers
+# =============================================================================
+
+def _timestamp() -> str:
+    """Return a compact timestamp for console progress messages."""
+    return datetime.now().strftime("%H:%M:%S")
+
+
+def _print_stage_start(message: str) -> None:
+    """Print a standardized stage-start message."""
+    print(f"[{_timestamp()}] [→] {message}")
+
+
+def _print_stage_done(message: str) -> None:
+    """Print a standardized stage-complete message."""
+    print(f"[{_timestamp()}] [✓] {message}")
+
+
+def _print_info(message: str) -> None:
+    """Print a standardized informational message."""
+    print(f"[{_timestamp()}] [i] {message}")
+
+
+# =============================================================================
 # Helpers
 # =============================================================================
 
@@ -93,6 +117,8 @@ def _ensure_undirected(G: nx.Graph, weight_attr: str) -> nx.Graph:
     was_directed = G.is_directed()
     if not was_directed:
         return G
+
+    _print_info("Input graph is directed; converting to undirected graph")
 
     H = nx.Graph()
     H.add_nodes_from(G.nodes(data=True))
@@ -145,6 +171,7 @@ def _write_node_summaries(
     }
 
     if export_core_numbers:
+        _print_stage_start("Computing node core numbers")
         core = nx.core_number(G)
         out_path = outdir / core_numbers_csv
         pd.DataFrame(
@@ -153,8 +180,10 @@ def _write_node_summaries(
             out_path, index=False, encoding="utf-8"
         )
         outputs["core_numbers_csv"] = str(out_path)
+        _print_stage_done(f"Node core numbers written: {out_path.name}")
 
     if export_node_summary:
+        _print_stage_start("Computing node degree / weighted-degree summary")
         has_w = _infer_has_weights(G, weight_attr)
         deg = dict(G.degree())
         if has_w:
@@ -173,6 +202,7 @@ def _write_node_summaries(
             out_path, index=False, encoding="utf-8"
         )
         outputs["node_summary_csv"] = str(out_path)
+        _print_stage_done(f"Node summary written: {out_path.name}")
 
     return outputs
 
@@ -188,6 +218,16 @@ def _write_k_components(
     """
     Export each k-component as GEXF + node list CSV, and write a summary CSV.
 
+    Additions preserved here:
+    - If a given k has more than one component, also export a combined same-k GEXF.
+    - Also export an isolated same-k GEXF containing only intra-component edges.
+    - Also export an all-nodes CSV for that combined same-k graph, including:
+        * component_id
+        * component_ids
+        * component_count
+        * adjacent_overlap_count
+        * overlap_internal_degree
+
     Returns:
         summary_path, exported_k_levels, total_components_exported
     """
@@ -200,8 +240,115 @@ def _write_k_components(
 
     total_components = 0
 
+    _print_info(f"k-levels available for export: {ks}")
+
     for k in ks:
         comps = kcomp[k]
+        _print_stage_start(f"Exporting k={k} components ({len(comps)} component(s))")
+
+        k_level_gexf_name = ""
+        k_level_nodes_csv_name = ""
+        k_level_isolated_gexf_name = ""
+
+        # Export one combined same-k graph + all-nodes CSV if multiple components exist
+        if len(comps) > 1:
+            _print_stage_start(f"Creating combined same-k exports for k={k}")
+
+            union_nodes = set().union(*comps)
+            combined_sub = G.subgraph(union_nodes).copy()
+
+            # Track all same-k memberships per node
+            membership_map = {}
+            for i, node_set in enumerate(comps, start=1):
+                for node in node_set:
+                    membership_map.setdefault(node, []).append(i)
+
+            component_ids_attr = {
+                node: "|".join(str(cid) for cid in sorted(ids))
+                for node, ids in membership_map.items()
+            }
+            component_count_attr = {
+                node: len(ids)
+                for node, ids in membership_map.items()
+            }
+
+            nx.set_node_attributes(combined_sub, component_ids_attr, "component_ids")
+            nx.set_node_attributes(combined_sub, component_count_attr, "component_count")
+
+            k_level_gexf_name = f"{component_prefix}_k{k}_all_components.gexf"
+            k_level_nodes_csv_name = f"{component_prefix}_k{k}_all_nodes.csv"
+            k_level_isolated_gexf_name = f"{component_prefix}_k{k}_all_components_isolated.gexf"
+
+            # Combined induced graph: keeps all original edges among unioned nodes
+            nx.write_gexf(combined_sub, outdir / k_level_gexf_name)
+
+            # Isolated combined graph: keeps only intra-component edges
+            isolated_sub = nx.Graph()
+            isolated_sub.graph.update(G.graph)
+
+            for i, node_set in enumerate(comps, start=1):
+                sub = G.subgraph(node_set).copy()
+                sub_component_ids = {
+                    n: "|".join(str(cid) for cid in sorted(membership_map[n]))
+                    for n in sub.nodes()
+                }
+                sub_component_count = {
+                    n: len(membership_map[n])
+                    for n in sub.nodes()
+                }
+
+                nx.set_node_attributes(sub, sub_component_ids, "component_ids")
+                nx.set_node_attributes(sub, sub_component_count, "component_count")
+                isolated_sub.add_nodes_from(sub.nodes(data=True))
+                isolated_sub.add_edges_from(sub.edges(data=True))
+
+            nx.write_gexf(isolated_sub, outdir / k_level_isolated_gexf_name)
+
+            # Overlap-node sets and derived metrics
+            overlap_nodes = {
+                node for node, count in component_count_attr.items() if count > 1
+            }
+
+            # For any node: how many overlap nodes does it touch?
+            adjacent_overlap_count_map = {
+                node: sum(1 for nbr in combined_sub.neighbors(node) if nbr in overlap_nodes)
+                for node in combined_sub.nodes()
+            }
+
+            # For overlap nodes only: how many overlap nodes does it touch?
+            overlap_internal_degree_map = {
+                node: (
+                    sum(1 for nbr in combined_sub.neighbors(node) if nbr in overlap_nodes)
+                    if node in overlap_nodes
+                    else 0
+                )
+                for node in combined_sub.nodes()
+            }
+
+            all_nodes_rows = []
+            for i, node_set in enumerate(comps, start=1):
+                for node in sorted(node_set):
+                    all_nodes_rows.append(
+                        {
+                            "node": node,
+                            "component_id": i,
+                            "component_ids": "|".join(str(cid) for cid in sorted(membership_map[node])),
+                            "component_count": len(membership_map[node]),
+                            "adjacent_overlap_count": adjacent_overlap_count_map[node],
+                            "overlap_internal_degree": overlap_internal_degree_map[node],
+                        }
+                    )
+
+            pd.DataFrame(all_nodes_rows).sort_values(
+                ["component_id", "node"]
+            ).to_csv(
+                outdir / k_level_nodes_csv_name,
+                index=False,
+                encoding="utf-8",
+            )
+
+            _print_stage_done(f"Combined same-k exports written for k={k}")
+
         for i, node_set in enumerate(comps, start=1):
             sub = G.subgraph(node_set).copy()
 
@@ -222,9 +369,14 @@ def _write_k_components(
                     "num_edges": sub.number_of_edges(),
                     "gexf_file": gexf_name,
                     "nodes_csv": csv_name,
+                    "k_level_gexf_file": k_level_gexf_name,
+                    "k_level_nodes_csv": k_level_nodes_csv_name,
+                    "k_level_isolated_gexf_file": k_level_isolated_gexf_name,
                 }
             )
             total_components += 1
+
+        _print_stage_done(f"k={k} export complete")
 
     summary = pd.DataFrame(rows)
     if not summary.empty:
@@ -232,6 +384,7 @@ def _write_k_components(
 
     summary_path = outdir / f"{component_prefix}_summary.csv"
     summary.to_csv(summary_path, index=False, encoding="utf-8")
+    _print_stage_done(f"Component summary CSV written: {summary_path.name}")
 
     return summary_path, ks, total_components
 
@@ -337,9 +490,11 @@ def run(
 
     export_only_k = _normalize_export_only_k(export_only_k)
 
+    _print_stage_start(f"Loading GEXF: {input_gexf}")
     G_in = nx.read_gexf(input_gexf)
     graph_was_directed = G_in.is_directed()
     G = _ensure_undirected(G_in, weight_attr=weight_attr)
+    _print_stage_done("Graph loaded")
 
     if G.number_of_nodes() == 0:
         raise ValueError("Input network has 0 nodes. Nothing to analyze.")
@@ -347,6 +502,10 @@ def run(
         raise ValueError("Input network has 0 edges. k-components are not meaningful on an edgeless graph.")
 
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    _print_info(
+        f"Graph stats: {G.number_of_nodes():,} nodes | {G.number_of_edges():,} edges"
+    )
 
     node_outputs = _write_node_summaries(
         G,
@@ -358,7 +517,9 @@ def run(
         weight_attr=weight_attr,
     )
 
+    _print_stage_start("Computing k-components")
     kcomp = k_components(G)
+    _print_stage_done("k-components computed")
 
     component_summary_csv, exported_k_levels, total_components_exported = _write_k_components(
         G,
@@ -369,6 +530,7 @@ def run(
     )
 
     out_summary = output_dir / out_summary_name
+    _print_stage_start("Writing analysis summary")
     _write_summary(
         out_path=out_summary,
         run_timestamp=run_timestamp,
@@ -387,6 +549,7 @@ def run(
         core_numbers_csv=node_outputs["core_numbers_csv"],
         node_summary_csv=node_outputs["node_summary_csv"],
     )
+    _print_stage_done(f"Analysis summary written: {out_summary.name}")
 
     return {
         "run_timestamp": run_timestamp,

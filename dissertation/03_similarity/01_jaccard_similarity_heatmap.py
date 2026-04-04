@@ -65,10 +65,17 @@ OUT_SUMMARY = "analysis_summary.txt"
 
 # Plot options
 MAKE_PLOT = True
-FIGSIZE = (12, 10)
+FIGSIZE = (18, 15)
 DPI = 300
-ANNOTATE_CELLS = True
+ANNOTATE_CELLS = False
 ANNOT_FORMAT = ".2f"
+
+# Plot readability options
+CLUSTER_FOR_PLOT = True
+X_LABEL_ROTATION = 45
+X_LABEL_FONTSIZE = 8
+Y_LABEL_FONTSIZE = 8
+MAX_LABEL_LEN: Optional[int] = 38  # None disables abbreviation for plotting
 
 
 # =============================================================================
@@ -201,6 +208,42 @@ def _compute_jaccard_matrix(incidence: pd.DataFrame, case_names: list[str]) -> p
     return pd.DataFrame(mat, index=case_names, columns=case_names)
 
 
+def _abbreviate_label(label: str, max_len: Optional[int]) -> str:
+    """Abbreviate long plot labels for readability."""
+    if max_len is None or len(label) <= max_len:
+        return label
+    return label[: max_len - 1].rstrip() + "…"
+
+
+def _reorder_for_plot(jaccard_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Reorder the similarity matrix for plotting using hierarchical clustering.
+    Reordering affects the PNG heatmap only, not the CSV export.
+    """
+    if jaccard_df.shape[0] <= 2:
+        return jaccard_df
+
+    try:
+        from scipy.cluster.hierarchy import linkage, leaves_list
+        from scipy.spatial.distance import squareform
+    except Exception:
+        return jaccard_df
+
+    data = jaccard_df.to_numpy(dtype=float)
+
+    # Convert similarity to distance; clip for numerical safety
+    dist = 1.0 - data
+    np.fill_diagonal(dist, 0.0)
+    dist = np.clip(dist, 0.0, 1.0)
+
+    # Condensed distance for linkage
+    condensed = squareform(dist, checks=False)
+    Z = linkage(condensed, method="average")
+    order = leaves_list(Z)
+
+    return jaccard_df.iloc[order, order]
+
+
 def _plot_heatmap(
     jaccard_df: pd.DataFrame,
     out_png: Path,
@@ -210,6 +253,11 @@ def _plot_heatmap(
     dpi: int,
     annotate_cells: bool,
     annot_format: str,
+    cluster_for_plot: bool,
+    x_label_rotation: float,
+    x_label_fontsize: float,
+    y_label_fontsize: float,
+    max_label_len: Optional[int],
 ) -> None:
     """Plot and save the heatmap."""
     import matplotlib.pyplot as plt
@@ -220,33 +268,46 @@ def _plot_heatmap(
     except Exception:
         use_seaborn = False
 
+    plot_df = _reorder_for_plot(jaccard_df) if cluster_for_plot else jaccard_df
+    plot_labels_x = [_abbreviate_label(x, max_label_len) for x in plot_df.columns.tolist()]
+    plot_labels_y = [_abbreviate_label(y, max_label_len) for y in plot_df.index.tolist()]
+    data = plot_df.to_numpy(dtype=float)
+
     fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
-    data = jaccard_df.to_numpy(dtype=float)
 
     if use_seaborn:
         sns.heatmap(
-            jaccard_df.astype(float),
+            plot_df.astype(float),
             annot=annotate_cells,
             fmt=annot_format,
             vmin=0,
             vmax=1,
             ax=ax,
+            cbar_kws={"shrink": 0.85},
+            xticklabels=plot_labels_x,
+            yticklabels=plot_labels_y,
         )
     else:
-        im = ax.imshow(data, vmin=0, vmax=1)
+        im = ax.imshow(data, vmin=0, vmax=1, aspect="auto")
         fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
         if annotate_cells:
             for (i, j), val in np.ndenumerate(data):
                 ax.text(j, i, format(val, annot_format), ha="center", va="center")
 
-        ax.set_xticks(range(jaccard_df.shape[1]))
-        ax.set_yticks(range(jaccard_df.shape[0]))
-        ax.set_xticklabels(jaccard_df.columns.tolist())
-        ax.set_yticklabels(jaccard_df.index.tolist())
+        ax.set_xticks(range(plot_df.shape[1]))
+        ax.set_yticks(range(plot_df.shape[0]))
+        ax.set_xticklabels(plot_labels_x)
+        ax.set_yticklabels(plot_labels_y)
 
-    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=x_label_rotation, ha="right")
     ax.set_yticklabels(ax.get_yticklabels(), rotation=0)
+
+    for tick in ax.get_xticklabels():
+        tick.set_fontsize(x_label_fontsize)
+    for tick in ax.get_yticklabels():
+        tick.set_fontsize(y_label_fontsize)
+
     ax.set_title(f"Jaccard Similarity (features with freq ≥ {min_feature_freq})")
 
     out_png.parent.mkdir(parents=True, exist_ok=True)
@@ -318,10 +379,15 @@ def run(
     out_png_name: Optional[str] = None,
     out_summary_name: str = "analysis_summary.txt",
     make_plot: bool = True,
-    figsize: tuple[float, float] = (12, 10),
+    figsize: tuple[float, float] = (18, 15),
     dpi: int = 300,
-    annotate_cells: bool = True,
+    annotate_cells: bool = False,
     annot_format: str = ".2f",
+    cluster_for_plot: bool = True,
+    x_label_rotation: float = 45,
+    x_label_fontsize: float = 8,
+    y_label_fontsize: float = 8,
+    max_label_len: Optional[int] = 38,
 ) -> Dict[str, Any]:
     """
     Run the analysis and return a structured result dictionary.
@@ -353,7 +419,10 @@ def run(
     out_png = output_dir / resolved_out_png_name
     out_summary = output_dir / out_summary_name
 
+    # CSV stays in original case order
     jaccard_df.to_csv(out_csv, encoding="utf-8")
+    clustered_df = _reorder_for_plot(jaccard_df)
+    clustered_df.to_csv(out_csv.with_name(out_csv.stem + "_clustered.csv"), encoding="utf-8")
 
     png_path: Optional[Path] = None
     if make_plot:
@@ -365,6 +434,11 @@ def run(
             dpi=dpi,
             annotate_cells=annotate_cells,
             annot_format=annot_format,
+            cluster_for_plot=cluster_for_plot,
+            x_label_rotation=x_label_rotation,
+            x_label_fontsize=x_label_fontsize,
+            y_label_fontsize=y_label_fontsize,
+            max_label_len=max_label_len,
         )
         png_path = out_png
 
@@ -448,8 +522,18 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--fig-width", type=float, default=FIGSIZE[0], help="Figure width")
     parser.add_argument("--fig-height", type=float, default=FIGSIZE[1], help="Figure height")
     parser.add_argument("--dpi", type=int, default=DPI, help="Heatmap DPI")
-    parser.add_argument("--no-annotate", action="store_true", help="Disable cell annotations")
+    parser.add_argument("--annotate", action="store_true", help="Enable cell annotations")
     parser.add_argument("--annot-format", type=str, default=ANNOT_FORMAT, help="Annotation format string")
+    parser.add_argument("--no-cluster-for-plot", action="store_true", help="Do not reorder heatmap for plotting")
+    parser.add_argument("--x-label-rotation", type=float, default=X_LABEL_ROTATION, help="X-axis label rotation")
+    parser.add_argument("--x-label-fontsize", type=float, default=X_LABEL_FONTSIZE, help="X-axis label font size")
+    parser.add_argument("--y-label-fontsize", type=float, default=Y_LABEL_FONTSIZE, help="Y-axis label font size")
+    parser.add_argument(
+        "--max-label-len",
+        type=int,
+        default=(MAX_LABEL_LEN if MAX_LABEL_LEN is not None else 0),
+        help="Maximum label length for plotting (0 disables abbreviation)",
+    )
 
     return parser.parse_args()
 
@@ -461,6 +545,12 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     """Run the script using CONFIG defaults or CLI overrides."""
     args = _parse_args()
+
+    max_label_len: Optional[int]
+    if args.max_label_len == 0:
+        max_label_len = None
+    else:
+        max_label_len = args.max_label_len
 
     result = run(
         input_path=args.input,
@@ -475,8 +565,13 @@ def main() -> None:
         make_plot=not args.no_plot,
         figsize=(args.fig_width, args.fig_height),
         dpi=args.dpi,
-        annotate_cells=not args.no_annotate,
+        annotate_cells=args.annotate,
         annot_format=args.annot_format,
+        cluster_for_plot=not args.no_cluster_for_plot,
+        x_label_rotation=args.x_label_rotation,
+        x_label_fontsize=args.x_label_fontsize,
+        y_label_fontsize=args.y_label_fontsize,
+        max_label_len=max_label_len,
     )
 
     print("[✓] Jaccard similarity analysis complete.")

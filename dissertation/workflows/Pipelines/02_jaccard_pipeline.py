@@ -39,7 +39,7 @@ from typing import Any, Dict, Optional
 # =============================================================================
 
 # Input binary incidence matrix
-INPUT_PATH = Path("dissertation/sample_data/first_7_books.xlsx")
+INPUT_PATH = Path("sample_files/full_workflow_sample_data.xlsx")
 
 # Shared matrix settings
 TITLE_COL: Optional[str] = None
@@ -54,10 +54,17 @@ PIPELINE_OUTPUT_DIR = Path(".")
 # Stage 1: Jaccard settings
 MIN_FEATURE_FREQ = 2
 MAKE_HEATMAP = True
-HEATMAP_FIGSIZE = (12, 10)
+HEATMAP_FIGSIZE = (18, 15)
 HEATMAP_DPI = 300
-ANNOTATE_CELLS = True
+ANNOTATE_CELLS = False
 ANNOT_FORMAT = ".2f"
+
+# Stage 1: heatmap readability options
+CLUSTER_FOR_PLOT = True
+X_LABEL_ROTATION = 45
+X_LABEL_FONTSIZE = 8
+Y_LABEL_FONTSIZE = 8
+HEATMAP_MAX_LABEL_LEN: Optional[int] = 38
 
 # Stage 2: Clustering settings
 DISTANCE_MODE = "one_minus"
@@ -73,12 +80,17 @@ LINKAGE_METHOD = "average"
 # Distance-cutoff mode:
 #     N_CLUSTERS = None
 #     DISTANCE_CUTOFF = 0.65
-N_CLUSTERS: Optional[int] = 3
-DISTANCE_CUTOFF: Optional[float] = None
+N_CLUSTERS: Optional[int] = None
+DISTANCE_CUTOFF: Optional[float] = 0.90
 
 WRITE_DENDROGRAM = True
-DENDROGRAM_FIGSIZE = (10, 6)
+DENDROGRAM_FIGSIZE = (20, 10)
 DENDROGRAM_DPI = 300
+
+# Stage 2: dendrogram readability options
+LEAF_ROTATION = 60
+LEAF_FONTSIZE = 8
+DENDROGRAM_MAX_LABEL_LEN: Optional[int] = 38
 
 # Pipeline summary filename
 PIPELINE_SUMMARY_NAME = "pipeline_summary.txt"
@@ -202,17 +214,25 @@ def run(
     presence_token: str = "X",
     min_feature_freq: int = 2,
     make_heatmap: bool = True,
-    heatmap_figsize: tuple[float, float] = (12, 10),
+    heatmap_figsize: tuple[float, float] = (18, 15),
     heatmap_dpi: int = 300,
-    annotate_cells: bool = True,
+    annotate_cells: bool = False,
     annot_format: str = ".2f",
+    cluster_for_plot: bool = True,
+    x_label_rotation: float = 45,
+    x_label_fontsize: float = 8,
+    y_label_fontsize: float = 8,
+    heatmap_max_label_len: Optional[int] = 38,
     distance_mode: str = "one_minus",
     linkage_method: str = "average",
-    n_clusters: Optional[int] = 3,
-    distance_cutoff: Optional[float] = None,
+    n_clusters: Optional[int] = None,
+    distance_cutoff: Optional[float] = 0.90,
     write_dendrogram: bool = True,
-    dendrogram_figsize: tuple[float, float] = (10, 6),
+    dendrogram_figsize: tuple[float, float] = (20, 10),
     dendrogram_dpi: int = 300,
+    leaf_rotation: float = 60,
+    leaf_font_size: float = 8,
+    dendrogram_max_label_len: Optional[int] = 38,
     pipeline_summary_name: str = "pipeline_summary.txt",
 ) -> Dict[str, Any]:
     """
@@ -253,6 +273,11 @@ def run(
         dpi=heatmap_dpi,
         annotate_cells=annotate_cells,
         annot_format=annot_format,
+        cluster_for_plot=cluster_for_plot,
+        x_label_rotation=x_label_rotation,
+        x_label_fontsize=x_label_fontsize,
+        y_label_fontsize=y_label_fontsize,
+        max_label_len=heatmap_max_label_len,
     )
 
     # Stage 2: clustering
@@ -270,6 +295,9 @@ def run(
         write_dendrogram=write_dendrogram,
         dendrogram_figsize=dendrogram_figsize,
         dpi=dendrogram_dpi,
+        leaf_rotation=leaf_rotation,
+        leaf_font_size=leaf_font_size,
+        max_label_len=dendrogram_max_label_len,
     )
 
     pipeline_summary_path = resolved_pipeline_output_dir / pipeline_summary_name
@@ -356,10 +384,20 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--heatmap-width", type=float, default=HEATMAP_FIGSIZE[0], help="Heatmap figure width")
     parser.add_argument("--heatmap-height", type=float, default=HEATMAP_FIGSIZE[1], help="Heatmap figure height")
     parser.add_argument("--heatmap-dpi", type=int, default=HEATMAP_DPI, help="Heatmap DPI")
-    parser.add_argument("--no-annotate", action="store_true", help="Disable heatmap cell annotations")
+    parser.add_argument("--annotate", action="store_true", help="Enable heatmap cell annotations")
     parser.add_argument("--annot-format", type=str, default=ANNOT_FORMAT, help="Heatmap annotation format string")
+    parser.add_argument("--no-cluster-for-plot", action="store_true", help="Do not reorder heatmap for plotting")
+    parser.add_argument("--x-label-rotation", type=float, default=X_LABEL_ROTATION, help="Heatmap x-label rotation")
+    parser.add_argument("--x-label-fontsize", type=float, default=X_LABEL_FONTSIZE, help="Heatmap x-label font size")
+    parser.add_argument("--y-label-fontsize", type=float, default=Y_LABEL_FONTSIZE, help="Heatmap y-label font size")
+    parser.add_argument(
+        "--heatmap-max-label-len",
+        type=int,
+        default=(HEATMAP_MAX_LABEL_LEN if HEATMAP_MAX_LABEL_LEN is not None else 0),
+        help="Maximum heatmap label length for plotting (0 disables abbreviation)",
+    )
 
-    parser.add_argument("--distance-mode", type=str, default=DISTANCE_MODE, help='Similarity-to-distance transform')
+    parser.add_argument("--distance-mode", type=str, default=DISTANCE_MODE, help="Similarity-to-distance transform")
     parser.add_argument("--linkage-method", type=str, default=LINKAGE_METHOD, help="Hierarchical clustering linkage")
 
     parser.add_argument(
@@ -385,6 +423,14 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--dendrogram-width", type=float, default=DENDROGRAM_FIGSIZE[0], help="Dendrogram figure width")
     parser.add_argument("--dendrogram-height", type=float, default=DENDROGRAM_FIGSIZE[1], help="Dendrogram figure height")
     parser.add_argument("--dendrogram-dpi", type=int, default=DENDROGRAM_DPI, help="Dendrogram DPI")
+    parser.add_argument("--leaf-rotation", type=float, default=LEAF_ROTATION, help="Dendrogram leaf rotation")
+    parser.add_argument("--leaf-font-size", type=float, default=LEAF_FONTSIZE, help="Dendrogram leaf font size")
+    parser.add_argument(
+        "--dendrogram-max-label-len",
+        type=int,
+        default=(DENDROGRAM_MAX_LABEL_LEN if DENDROGRAM_MAX_LABEL_LEN is not None else 0),
+        help="Maximum dendrogram label length for plotting (0 disables abbreviation)",
+    )
 
     return parser.parse_args()
 
@@ -397,6 +443,18 @@ def main() -> None:
     """Run the pipeline using CONFIG defaults or CLI overrides."""
     args = _parse_args()
 
+    heatmap_max_label_len: Optional[int]
+    if args.heatmap_max_label_len == 0:
+        heatmap_max_label_len = None
+    else:
+        heatmap_max_label_len = args.heatmap_max_label_len
+
+    dendrogram_max_label_len: Optional[int]
+    if args.dendrogram_max_label_len == 0:
+        dendrogram_max_label_len = None
+    else:
+        dendrogram_max_label_len = args.dendrogram_max_label_len
+
     result = run(
         input_path=args.input,
         pipeline_output_dir=args.output_dir,
@@ -407,8 +465,13 @@ def main() -> None:
         make_heatmap=not args.no_heatmap,
         heatmap_figsize=(args.heatmap_width, args.heatmap_height),
         heatmap_dpi=args.heatmap_dpi,
-        annotate_cells=not args.no_annotate,
+        annotate_cells=args.annotate,
         annot_format=args.annot_format,
+        cluster_for_plot=not args.no_cluster_for_plot,
+        x_label_rotation=args.x_label_rotation,
+        x_label_fontsize=args.x_label_fontsize,
+        y_label_fontsize=args.y_label_fontsize,
+        heatmap_max_label_len=heatmap_max_label_len,
         distance_mode=args.distance_mode,
         linkage_method=args.linkage_method,
         n_clusters=args.n_clusters,
@@ -416,6 +479,9 @@ def main() -> None:
         write_dendrogram=not args.no_dendrogram,
         dendrogram_figsize=(args.dendrogram_width, args.dendrogram_height),
         dendrogram_dpi=args.dendrogram_dpi,
+        leaf_rotation=args.leaf_rotation,
+        leaf_font_size=args.leaf_font_size,
+        dendrogram_max_label_len=dendrogram_max_label_len,
         pipeline_summary_name=PIPELINE_SUMMARY_NAME,
     )
 

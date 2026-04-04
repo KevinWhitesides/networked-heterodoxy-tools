@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -42,7 +43,7 @@ from typing import Any, Dict, Optional
 # =============================================================================
 
 # Input binary incidence matrix
-INPUT_PATH = Path("dissertation/sample_data/first_7_books.xlsx")
+INPUT_PATH = Path("sample_files/full_workflow_sample_data.xlsx")
 
 # Shared matrix settings
 TITLE_COL: Optional[str] = None
@@ -56,12 +57,12 @@ PRESENCE_TOKEN = "X"
 PROJECTION_MODES = ["feature", "case"]
 
 # Projection-stage node filters
-MIN_FEATURE_NODE_FREQ = 4
+MIN_FEATURE_NODE_FREQ = 2
 MIN_CASE_NODE_FREQ = 2
 
 # Projection-stage edge thresholds
-FEATURE_EDGE_THRESHOLDS = [3, 5]
-CASE_EDGE_THRESHOLDS = [10, 15]
+FEATURE_EDGE_THRESHOLDS = [10]
+CASE_EDGE_THRESHOLDS = [10]
 
 # Topology-stage settings
 EXPORT_ONLY_K: Optional[list[int]] = None
@@ -85,6 +86,26 @@ PIPELINE_SUMMARY_NAME = "pipeline_summary.txt"
 # =============================================================================
 # Helpers
 # =============================================================================
+
+def _timestamp() -> str:
+    """Return a short timestamp string for console messages."""
+    return datetime.now().strftime("%H:%M:%S")
+
+
+def _print_stage_start(message: str) -> None:
+    """Print a standardized stage start message."""
+    print(f"[{_timestamp()}] [→] {message}")
+
+
+def _print_stage_done(message: str) -> None:
+    """Print a standardized stage completion message."""
+    print(f"[{_timestamp()}] [✓] {message}")
+
+
+def _print_info(message: str) -> None:
+    """Print a standardized informational message."""
+    print(f"[{_timestamp()}] [i] {message}")
+
 
 def _load_module(module_path: Path, module_name: str):
     """Dynamically load a Python module from a file path."""
@@ -278,8 +299,15 @@ def run(
     resolved_pipeline_output_dir = _resolve_pipeline_output_dir(pipeline_output_dir)
     resolved_pipeline_output_dir.mkdir(parents=True, exist_ok=True)
 
+    _print_info(f"Input file: {input_path}")
+    _print_info(f"Pipeline output directory: {resolved_pipeline_output_dir}")
+    _print_info(f"Projection modes: {projection_modes}")
+    _print_info(f"Feature thresholds: {feature_edge_thresholds}")
+    _print_info(f"Case thresholds: {case_edge_thresholds}")
+
     # Load component scripts
     repo_root = Path(__file__).resolve().parents[2]
+    _print_stage_start("Loading pipeline modules")
     projection_module = _load_module(
         repo_root / "02_networks" / "01_build_one_mode_projection.py",
         "build_one_mode_projection",
@@ -292,9 +320,11 @@ def run(
         repo_root / "04_topology" / "02_burt_brokerage_metrics.py",
         "burt_brokerage_metrics",
     )
+    _print_stage_done("Pipeline modules loaded")
 
     # Stage 1: build one-mode networks
     stage1_dir = resolved_pipeline_output_dir / "00_projection_build"
+    _print_stage_start("Stage 1/3: Building one-mode projections")
     projection_result = projection_module.run(
         input_path=input_path,
         output_dir=stage1_dir,
@@ -308,12 +338,14 @@ def run(
         case_edge_thresholds=case_edge_thresholds,
         out_summary_name="analysis_summary.txt",
     )
+    _print_stage_done("Stage 1/3 complete: One-mode projections built")
 
     network_runs: list[Dict[str, Any]] = []
 
     # Stages 2 + 3: iterate over each generated GEXF
     for mode in projection_modes:
         mode_info = projection_result["projections"][mode]
+        _print_info(f"Preparing {mode} projection outputs")
 
         for thr, thr_info in mode_info["thresholds"].items():
             threshold_root = resolved_pipeline_output_dir / mode / f"thr{thr}"
@@ -321,19 +353,24 @@ def run(
             kcomp_dir = threshold_root / "02_k_components"
             burt_dir = threshold_root / "03_burt"
 
-            # Preserve projection files inside threshold-specific folder
+            _print_stage_start(f"{mode} | thr{thr}: Preparing threshold-specific workspace")
+
             one_mode_dir.mkdir(parents=True, exist_ok=True)
             gexf_path = Path(thr_info["gexf"])
             edge_csv_path = Path(thr_info["edge_csv"])
 
-            # Copy projection outputs into threshold folder
-            import shutil
             copied_gexf = one_mode_dir / gexf_path.name
             copied_edge_csv = one_mode_dir / edge_csv_path.name
+
             shutil.copy2(gexf_path, copied_gexf)
             shutil.copy2(edge_csv_path, copied_edge_csv)
 
-            # k-components on this one GEXF
+            _print_info(f"{mode} | thr{thr}: GEXF copied to {copied_gexf}")
+            _print_info(f"{mode} | thr{thr}: Edge CSV copied to {copied_edge_csv}")
+            _print_stage_done(f"{mode} | thr{thr}: Workspace ready")
+
+            # Stage 2: k-components
+            _print_stage_start(f"{mode} | thr{thr}: Starting k-components")
             kcomp_result = kcomp_module.run(
                 input_gexf=copied_gexf,
                 output_dir=kcomp_dir,
@@ -346,8 +383,10 @@ def run(
                 component_prefix=component_prefix,
                 out_summary_name="analysis_summary.txt",
             )
+            _print_stage_done(f"{mode} | thr{thr}: k-components complete")
 
-            # Burt metrics on this same GEXF
+            # Stage 3: Burt metrics
+            _print_stage_start(f"{mode} | thr{thr}: Starting Burt brokerage metrics")
             burt_result = burt_module.run(
                 input_gexf=copied_gexf,
                 output_dir=burt_dir,
@@ -357,6 +396,7 @@ def run(
                 out_summary_name="analysis_summary.txt",
                 progress_every=progress_every,
             )
+            _print_stage_done(f"{mode} | thr{thr}: Burt brokerage metrics complete")
 
             network_runs.append(
                 {
@@ -375,15 +415,16 @@ def run(
                 }
             )
 
-    # -------------------------------
-    # CLEAN UP STAGE 1 TEMP OUTPUT
-    # -------------------------------
-    import shutil
+            _print_stage_done(f"{mode} | thr{thr}: Threshold run complete")
 
+    # Cleanup stage 1 temp output
     if stage1_dir.exists():
+        _print_stage_start("Cleaning up temporary projection-build folder")
         shutil.rmtree(stage1_dir)
-    
+        _print_stage_done("Temporary projection-build folder removed")
+
     pipeline_summary_path = resolved_pipeline_output_dir / pipeline_summary_name
+    _print_stage_start("Writing top-level pipeline summary")
     _write_pipeline_summary(
         out_path=pipeline_summary_path,
         run_timestamp=run_timestamp,
@@ -405,6 +446,7 @@ def run(
         projection_result=projection_result,
         network_runs=network_runs,
     )
+    _print_stage_done("Top-level pipeline summary written")
 
     return {
         "run_timestamp": run_timestamp,

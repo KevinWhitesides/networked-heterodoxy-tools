@@ -130,8 +130,13 @@ OUT_SUMMARY = "analysis_summary.txt"
 
 # Dendrogram options
 WRITE_DENDROGRAM = True
-DENDROGRAM_FIGSIZE = (10, 6)
+DENDROGRAM_FIGSIZE = (20, 10)
 DPI = 300
+
+# Dendrogram readability options
+LEAF_ROTATION = 60
+LEAF_FONTSIZE = 8
+MAX_LABEL_LEN: Optional[int] = 38  # None disables abbreviation
 
 
 # =============================================================================
@@ -264,6 +269,13 @@ def _case_mean_similarity_to_cluster(sim_df: pd.DataFrame, case: str, members: l
     return float(sim_df.loc[case, others].mean())
 
 
+def _abbreviate_label(label: str, max_len: Optional[int]) -> str:
+    """Abbreviate long plot labels for readability."""
+    if max_len is None or len(label) <= max_len:
+        return label
+    return label[: max_len - 1].rstrip() + "…"
+
+
 def _write_dendrogram(
     linkage_matrix: np.ndarray,
     labels: list[str],
@@ -272,14 +284,38 @@ def _write_dendrogram(
     linkage_method: str,
     figsize: tuple[float, float],
     dpi: int,
+    leaf_rotation: float,
+    leaf_font_size: float,
+    max_label_len: Optional[int],
 ) -> None:
     """Write a dendrogram PNG."""
     import matplotlib.pyplot as plt
     from scipy.cluster.hierarchy import dendrogram
 
-    fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
-    dendrogram(linkage_matrix, labels=labels, leaf_rotation=45, ax=ax)
+    plot_labels = [_abbreviate_label(label, max_label_len) for label in labels]
+
+    fig, ax = plt.subplots(figsize=figsize)
+    dendrogram(
+        linkage_matrix,
+        labels=plot_labels,
+        leaf_rotation=0,  # disable internal rotation
+        leaf_font_size=leaf_font_size,
+        ax=ax,
+    )
+    
+    # Explicit control over label positioning
+    import matplotlib.pyplot as plt
+    plt.setp(
+        ax.get_xticklabels(),
+        rotation=90,
+        ha="center",
+        va="top",
+    )
     ax.set_title(f"Hierarchical Clustering Dendrogram ({linkage_method})")
+    ax.set_xlabel("")
+    ax.set_ylabel("Distance")
+
+    fig.subplots_adjust(bottom=0.40, left=0.08, right=0.98, top=0.92)
 
     out_png.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_png, dpi=dpi, bbox_inches="tight")
@@ -349,8 +385,11 @@ def run(
     out_dendrogram_name: Optional[str] = None,
     out_summary_name: str = "analysis_summary.txt",
     write_dendrogram: bool = True,
-    dendrogram_figsize: tuple[float, float] = (10, 6),
+    dendrogram_figsize: tuple[float, float] = (20, 10),
     dpi: int = 300,
+    leaf_rotation: float = 60,
+    leaf_font_size: float = 8,
+    max_label_len: Optional[int] = 38,
 ) -> Dict[str, Any]:
     """
     Run hierarchical clustering from a similarity matrix and return a structured
@@ -433,6 +472,9 @@ def run(
             linkage_method=linkage_method,
             figsize=dendrogram_figsize,
             dpi=dpi,
+            leaf_rotation=leaf_rotation,
+            leaf_font_size=leaf_font_size,
+            max_label_len=max_label_len,
         )
         dendrogram_path = out_dendrogram
 
@@ -521,7 +563,6 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
 
-   
     parser.add_argument(
         "--out-cluster-summary",
         type=str,
@@ -570,6 +611,24 @@ def _parse_args() -> argparse.Namespace:
         default=DPI,
         help="Dendrogram DPI",
     )
+    parser.add_argument(
+        "--leaf-rotation",
+        type=float,
+        default=LEAF_ROTATION,
+        help="Leaf label rotation in degrees",
+    )
+    parser.add_argument(
+        "--leaf-font-size",
+        type=float,
+        default=LEAF_FONTSIZE,
+        help="Leaf label font size",
+    )
+    parser.add_argument(
+        "--max-label-len",
+        type=int,
+        default=(MAX_LABEL_LEN if MAX_LABEL_LEN is not None else 0),
+        help="Maximum label length for plotting (0 disables abbreviation)",
+    )
 
     return parser.parse_args()
 
@@ -581,6 +640,12 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     """Run the script using CONFIG defaults or CLI overrides."""
     args = _parse_args()
+
+    max_label_len: Optional[int]
+    if args.max_label_len == 0:
+        max_label_len = None
+    else:
+        max_label_len = args.max_label_len
 
     result = run(
         input_sim_csv=args.input_sim_csv,
@@ -596,6 +661,9 @@ def main() -> None:
         write_dendrogram=not args.no_dendrogram,
         dendrogram_figsize=(args.fig_width, args.fig_height),
         dpi=args.dpi,
+        leaf_rotation=args.leaf_rotation,
+        leaf_font_size=args.leaf_font_size,
+        max_label_len=max_label_len,
     )
 
     print("[✓] Clustering complete.")
@@ -603,7 +671,6 @@ def main() -> None:
     print(f"    Linkage method:         {result['linkage_method']}")
     print(f"    Cluster rule:           {result['cluster_rule']}")
     print(f"    Clusters found:         {result['n_clusters_found']}")
-    print(f"    Assignments CSV:        {result['cluster_assignments_csv']}")
     print(f"    Cluster summary CSV:    {result['cluster_summary_csv']}")
     print(f"    Case-fit CSV:           {result['case_similarity_to_cluster_csv']}")
     if result["dendrogram_png"] is not None:

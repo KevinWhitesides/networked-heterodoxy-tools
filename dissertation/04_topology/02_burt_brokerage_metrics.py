@@ -68,6 +68,30 @@ PROGRESS_EVERY = 200
 
 
 # =============================================================================
+# Progress-print helpers
+# =============================================================================
+
+def _timestamp() -> str:
+    """Return a compact timestamp for console progress messages."""
+    return datetime.now().strftime("%H:%M:%S")
+
+
+def _print_stage_start(message: str) -> None:
+    """Print a standardized stage-start message."""
+    print(f"[{_timestamp()}] [→] {message}")
+
+
+def _print_stage_done(message: str) -> None:
+    """Print a standardized stage-complete message."""
+    print(f"[{_timestamp()}] [✓] {message}")
+
+
+def _print_info(message: str) -> None:
+    """Print a standardized informational message."""
+    print(f"[{_timestamp()}] [i] {message}")
+
+
+# =============================================================================
 # Helpers
 # =============================================================================
 
@@ -80,6 +104,7 @@ def _ensure_undirected(G: nx.Graph) -> tuple[nx.Graph, bool]:
     """
     was_directed = G.is_directed()
     if was_directed:
+        _print_info("Input graph is directed; converting to undirected")
         return G.to_undirected(), True
     return G, False
 
@@ -99,12 +124,16 @@ def _compute_burt_metrics(
     constraint: dict[str, float] = {}
     effective_size: dict[str, float] = {}
 
+    _print_info(f"Beginning node-by-node Burt metrics for {len(nodes):,} node(s)")
+
     for i, node in enumerate(nodes, start=1):
         constraint[node] = nx.constraint(G, nodes=[node], weight=weight_attr)[node]
         effective_size[node] = nx.effective_size(G, nodes=[node], weight=weight_attr)[node]
 
         if progress_every and i % progress_every == 0:
-            print(f"{i}/{len(nodes)} nodes processed...")
+            print(f"[{_timestamp()}] [i] {i}/{len(nodes)} nodes processed...")
+
+    _print_stage_done("Node-by-node Burt metric computation complete")
 
     df = pd.DataFrame(
         {
@@ -213,41 +242,58 @@ def run(
     if not input_gexf.exists():
         raise FileNotFoundError(f"Input GEXF not found: {input_gexf}")
 
+    _print_stage_start(f"Loading GEXF: {input_gexf}")
     G_in = nx.read_gexf(input_gexf)
     G, was_directed = _ensure_undirected(G_in)
+    _print_stage_done("Graph loaded")
 
     if G.number_of_nodes() == 0:
         raise ValueError("Input network has 0 nodes.")
     if G.number_of_edges() == 0:
         raise ValueError("Input network has 0 edges.")
 
+    _print_info(
+        f"Graph stats: {G.number_of_nodes():,} nodes | {G.number_of_edges():,} edges"
+    )
+
+    _print_stage_start("Computing Burt brokerage metrics")
     df, constraint, effective_size, degree = _compute_burt_metrics(
         G,
         weight_attr=weight_attr,
         progress_every=progress_every,
     )
+    _print_stage_done("Burt brokerage metrics computed")
 
     out_csv_path = output_dir / out_csv_name
+    _print_stage_start(f"Writing Burt metrics CSV: {out_csv_path.name}")
     df.to_csv(out_csv_path, index=False, encoding="utf-8")
+    _print_stage_done("Burt metrics CSV written")
 
+    _print_stage_start("Annotating graph with Burt node attributes")
     _annotate_graph(
         G,
         constraint=constraint,
         effective_size=effective_size,
         degree=degree,
     )
+    _print_stage_done("Graph annotation complete")
 
     out_gexf_path = output_dir / out_gexf_name
+    _print_stage_start(f"Writing annotated GEXF: {out_gexf_path.name}")
     nx.write_gexf(G, out_gexf_path)
+    _print_stage_done("Annotated GEXF written")
 
+    _print_stage_start("Computing summary statistics")
     min_constraint_node = str(df.loc[df["constraint"].idxmin(), "Id"])
     max_effective_size_node = str(df.loc[df["effective_size"].idxmax(), "Id"])
 
     mean_constraint = float(df["constraint"].mean())
     mean_effective_size = float(df["effective_size"].mean())
     mean_efficiency = float(df["efficiency"].dropna().mean())
+    _print_stage_done("Summary statistics computed")
 
     out_summary_path = output_dir / out_summary_name
+    _print_stage_start(f"Writing analysis summary: {out_summary_path.name}")
     _write_summary(
         out_path=out_summary_path,
         run_timestamp=run_timestamp,
@@ -264,6 +310,7 @@ def run(
         out_csv=out_csv_path,
         out_gexf=out_gexf_path,
     )
+    _print_stage_done("Analysis summary written")
 
     return {
         "run_timestamp": run_timestamp,
