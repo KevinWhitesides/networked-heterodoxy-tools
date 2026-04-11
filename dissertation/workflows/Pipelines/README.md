@@ -10,8 +10,8 @@ Together, the current pipelines address four complementary analytical problems:
 
 - **Pipeline 1:** network structure
 - **Pipeline 2:** similarity and clustering
-- **Pipeline 3:** case-level absence and gradients
-- **Pipeline 4:** feature-level absence and gradients
+- **Pipeline 3:** case-level absence, gradients, and recurrent mediation
+- **Pipeline 4:** feature-level absence, gradients, and recurrent mediation
 
 ---
 
@@ -53,8 +53,8 @@ group structure through clustering and similarity-based analysis.
 
 **Purpose:**  
 Identify case pairs with no shared features, analyze absence-based network
-structure, and explore discursive gradients connecting otherwise disconnected
-cases.
+structure, explore discursive gradients connecting otherwise disconnected
+cases, and identify recurring mediating vocabularies across those gradients.
 
 **Pipeline script:**  
 `03_case_zero_overlap_pipeline.py`
@@ -65,8 +65,8 @@ cases.
 
 **Purpose:**  
 Identify feature pairs that never co-occur, analyze feature-level absence
-structure, and explore feature gradients connecting otherwise disjoint regions
-of the corpus.
+structure, explore feature gradients connecting otherwise disjoint regions
+of the corpus, and identify recurring mediating cases across those gradients.
 
 **Pipeline script:**  
 `04_feature_zero_overlap_pipeline.py`
@@ -281,6 +281,7 @@ This pipeline operationalizes **absence structure** in the dataset, moving from:
 - zero-overlap detection
 - absence networks
 - graded transitional chains between otherwise disconnected cases
+- recurring mediating vocabularies across those gradient chains
 
 ---
 
@@ -318,6 +319,13 @@ This pipeline operationalizes **absence structure** in the dataset, moving from:
    - Builds case × feature bipartite graph for that chain  
    - Computes within-chain Jaccard diagnostics  
    - Outputs network, matrices, and visualization
+   
+5. **Gradient recurrence analysis (optional)**  
+   → `03_similarity/08_gradient_recurrence_analyzer.py`  
+   - Aggregates across all retained gradients  
+   - Identifies features that recur across multiple gradient chains  
+   - Computes co-recurrence relationships among mediating features  
+   - Outputs summary tables of recurrent mediators and co-occurrence structure
 
 ---
 
@@ -339,6 +347,7 @@ The pipeline creates a timestamped output directory:
     02_absence_networks/
     03_case_gradients/
     04_gradient_network/    # optional
+	05_gradient_recurrence/ # optional
     pipeline_summary.txt
 ```
 
@@ -378,6 +387,18 @@ The gradient stage supports flexible execution.
 - `"top_row"` → use highest-ranked gradient (default)
 - `"specific_endpoints"` → build network for chosen pair
 
+## Recurrence Analysis Notes
+
+- This stage operates **after gradient identification**
+- It aggregates across **multiple gradient chains**, rather than analyzing a single chain
+- It identifies:
+  - frequently reused mediating features
+  - co-recurrent mediator sets
+- Conceptually, it shifts analysis from:
+  - individual gradient paths  
+  to  
+  - **stable cross-gradient mediation patterns**
+
 ---
 
 ## Running the Pipeline
@@ -393,6 +414,7 @@ The pipeline will:
 - compute significant zero-overlap pairs
 - build absence networks
 - identify gradient chains
+- optionally run recurrence analysis
 - optionally construct a gradient network
 - organize outputs into structured subfolders
 - generate a top-level summary file
@@ -406,6 +428,7 @@ The pipeline will:
 - The gradient stage provides a bridge between:
   - discrete absence (zero overlap)
   - continuous similarity (Jaccard space)
+- The recurrence stage identifies **stable mediating vocabularies across gradients**
 
 ---
 
@@ -422,6 +445,7 @@ This pipeline operationalizes **feature-level absence structure**, moving from:
 - zero-overlap feature detection
 - feature absence networks
 - graded transitions across feature space
+- recurring mediating cases across those gradients
 
 ---
 
@@ -457,6 +481,13 @@ This pipeline operationalizes **feature-level absence structure**, moving from:
    - Builds a feature × case bipartite graph for that chain  
    - Computes within-chain feature Jaccard diagnostics  
    - Outputs network, matrices, ranked pairs, and visualization
+   
+5. **Gradient recurrence analysis (optional)**  
+   → `03_similarity/08_gradient_recurrence_analyzer.py`  
+   - Aggregates across retained feature gradients  
+   - Identifies cases that recur across multiple gradients  
+   - Computes co-recurrence relationships among mediating cases  
+   - Outputs summary tables of recurrent mediators and co-occurrence structure
 
 ---
 
@@ -478,6 +509,7 @@ The pipeline creates a timestamped output directory:
     02_absence_networks/
     03_feature_gradients/
     04_gradient_network/    # optional
+	05_gradient_recurrence/ # optional
     pipeline_summary.txt
 ```
 
@@ -513,6 +545,15 @@ The gradient stage supports flexible execution.
 - `"specific_endpoints"` → build network for chosen feature pair
 - `"specific_chain"` → build network for an exact stored chain string
 
+## Recurrence Analysis Notes
+
+- This stage operates **after feature gradient identification**
+- It aggregates across multiple feature-gradient chains
+- It identifies:
+  - recurrent mediating cases
+  - co-recurrent case sets
+- It highlights cases that function as **structural bridges across feature space**
+
 ---
 
 ## Feature-Space Notes
@@ -545,6 +586,7 @@ The pipeline will:
 - build feature absence networks
 - identify feature-gradient chains
 - optionally construct a feature-gradient network
+- optionally run recurrence analysis
 - organize outputs into structured subfolders
 - generate a top-level summary file
 
@@ -558,6 +600,7 @@ The pipeline will:
   - structurally disjoint feature regions
   - feature-space transitions
   - support patterns across cases
+- The recurrence stage identifies **cases that repeatedly bridge feature regions**
 
 ---
 

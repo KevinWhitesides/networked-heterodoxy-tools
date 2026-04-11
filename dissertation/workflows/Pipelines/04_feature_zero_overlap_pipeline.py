@@ -8,6 +8,7 @@ Run the Feature Zero-Overlap Suite pipeline:
 2) Feature absence network construction
 3) Feature gradient search
 4) Optional feature gradient-network construction
+5) Optional gradient recurrence analysis
 
 This pipeline is designed for binary incidence matrices (case × feature) where
 metadata columns may appear before feature columns.
@@ -16,7 +17,8 @@ Pipeline stages:
     Stage 1: 03_similarity/06_significant_zero_feature_overlap.py
     Stage 2: 02_networks/05_build_feature_absence_network.py
     Stage 3: 03_similarity/07_find_feature_gradients.py
-    Stage 4: 02_networks/06_build_feature_gradient_networks.py   (optional)
+    Stage 4: 02_networks/06_build_feature_gradient_networks.py    (optional)
+    Stage 5: 03_similarity/08_gradient_recurrence_analyzer.py     (optional)
 
 Standalone use:
     Edit the CONFIG block below, then run:
@@ -25,6 +27,7 @@ Standalone use:
 Outputs:
     - structured stage subfolders
     - optional gradient-network subfolder
+    - optional gradient-recurrence subfolder
     - top-level pipeline_summary.txt
 """
 
@@ -92,6 +95,13 @@ GRADIENT_MIN_FEATURES_PER_CASE = 2
 
 # Used only if GRADIENT_NETWORK_MODE = "specific_chain"
 EXACT_CHAIN_STRING = ""
+
+# Stage 5: optional gradient recurrence analysis
+RUN_GRADIENT_RECURRENCE = True
+RECURRENCE_MIN_WITHIN_GRADIENT_SUPPORT = 2
+RECURRENCE_MIN_GRADIENTS_FOR_META = 2
+RECURRENCE_WEIGHT_BY_SCORE = True
+RECURRENCE_SCORE_COLUMN = "total_score"
 
 # Pipeline output root
 PIPELINE_OUTPUT_DIR = Path(".")
@@ -177,10 +187,16 @@ def _write_pipeline_summary(
     gradient_selected_row: int,
     gradient_min_features_per_case: int,
     exact_chain_string: str,
+    run_gradient_recurrence: bool,
+    recurrence_min_within_gradient_support: int,
+    recurrence_min_gradients_for_meta: int,
+    recurrence_weight_by_score: bool,
+    recurrence_score_column: str,
     stage1_result: Dict[str, Any],
     stage2_result: Dict[str, Any],
     stage3_result: Dict[str, Any],
     stage4_result: Optional[Dict[str, Any]],
+    stage5_result: Optional[Dict[str, Any]],
 ) -> None:
     """Write a top-level pipeline summary."""
     with open(out_path, "w", encoding="utf-8") as f:
@@ -249,6 +265,14 @@ def _write_pipeline_summary(
             f.write(f"EXACT_CHAIN_STRING: {exact_chain_string}\n")
         f.write("\n")
 
+        f.write("Stage 5 settings: gradient recurrence\n")
+        f.write("-------------------------------------\n")
+        f.write(f"RUN_GRADIENT_RECURRENCE: {run_gradient_recurrence}\n")
+        f.write(f"RECURRENCE_MIN_WITHIN_GRADIENT_SUPPORT: {recurrence_min_within_gradient_support}\n")
+        f.write(f"RECURRENCE_MIN_GRADIENTS_FOR_META: {recurrence_min_gradients_for_meta}\n")
+        f.write(f"RECURRENCE_WEIGHT_BY_SCORE: {recurrence_weight_by_score}\n")
+        f.write(f"RECURRENCE_SCORE_COLUMN: {recurrence_score_column}\n\n")
+
         f.write("Stage outputs\n")
         f.write("-------------\n")
         f.write(f"Stage 1 summary: {stage1_result['summary_txt']}\n")
@@ -258,6 +282,10 @@ def _write_pipeline_summary(
             f.write(f"Stage 4 summary: {stage4_result['summary_txt']}\n")
         else:
             f.write("Stage 4 summary: (not run)\n")
+        if stage5_result is not None:
+            f.write(f"Stage 5 summary: {stage5_result['summary_txt']}\n")
+        else:
+            f.write("Stage 5 summary: (not run)\n")
         f.write("\n")
 
         f.write("Run summary\n")
@@ -274,6 +302,9 @@ def _write_pipeline_summary(
         if stage4_result is not None:
             f.write(f"Gradient network nodes: {stage4_result['bipartite_nodes']}\n")
             f.write(f"Gradient network edges: {stage4_result['bipartite_edges']}\n")
+        if stage5_result is not None:
+            f.write(f"Recurring entities written: {stage5_result['recurring_entities_written']}\n")
+            f.write(f"Co-recurrence edges written: {stage5_result['corecurrence_edges_written']}\n")
 
 
 # =============================================================================
@@ -319,6 +350,11 @@ def run(
     gradient_selected_row: int = 0,
     gradient_min_features_per_case: int = 2,
     exact_chain_string: str = "",
+    run_gradient_recurrence: bool = True,
+    recurrence_min_within_gradient_support: int = 2,
+    recurrence_min_gradients_for_meta: int = 2,
+    recurrence_weight_by_score: bool = True,
+    recurrence_score_column: str = "total_score",
     pipeline_summary_name: str = "pipeline_summary.txt",
 ) -> Dict[str, Any]:
     """
@@ -352,6 +388,10 @@ def run(
     stage4_module = _load_module(
         repo_root / "02_networks" / "06_build_feature_gradient_networks.py",
         "build_feature_gradient_networks",
+    )
+    stage5_module = _load_module(
+        repo_root / "03_similarity" / "08_gradient_recurrence_analyzer.py",
+        "gradient_recurrence_analyzer",
     )
 
     # -----------------------------------------------------------------
@@ -530,6 +570,39 @@ def run(
             )
 
     # -----------------------------------------------------------------
+    # Stage 5: optional gradient recurrence analysis
+    # -----------------------------------------------------------------
+    stage5_result: Optional[Dict[str, Any]] = None
+
+    should_run_stage5 = (
+        run_gradient_recurrence
+        and stage3_result["rows_written"] > 0
+    )
+
+    if should_run_stage5:
+        stage5_dir = resolved_pipeline_output_dir / "05_gradient_recurrence"
+
+        stage5_result = stage5_module.run(
+            gradients_csv=Path(stage3_result["feature_gradients_csv"]),
+            incidence_path=input_path,
+            output_dir=stage5_dir,
+            gradient_kind="feature",
+            sheet_name=sheet_name,
+            case_id_column=case_id_column,
+            n_metadata_cols=n_metadata_cols,
+            presence_token=presence_token,
+            producer_col=None,
+            min_within_gradient_support=recurrence_min_within_gradient_support,
+            min_gradients_for_meta=recurrence_min_gradients_for_meta,
+            weight_by_score=recurrence_weight_by_score,
+            score_column=recurrence_score_column,
+            out_summary_csv="gradient_recurrence_summary.csv",
+            out_membership_long_csv="gradient_recurrence_membership_long.csv",
+            out_corecurrence_edges_csv="gradient_recurrence_corecurrence_edges.csv",
+            out_summary_name="analysis_summary.txt",
+        )
+
+    # -----------------------------------------------------------------
     # Pipeline summary
     # -----------------------------------------------------------------
     pipeline_summary_path = resolved_pipeline_output_dir / pipeline_summary_name
@@ -573,10 +646,16 @@ def run(
         gradient_selected_row=gradient_selected_row,
         gradient_min_features_per_case=gradient_min_features_per_case,
         exact_chain_string=exact_chain_string,
+        run_gradient_recurrence=run_gradient_recurrence,
+        recurrence_min_within_gradient_support=recurrence_min_within_gradient_support,
+        recurrence_min_gradients_for_meta=recurrence_min_gradients_for_meta,
+        recurrence_weight_by_score=recurrence_weight_by_score,
+        recurrence_score_column=recurrence_score_column,
         stage1_result=stage1_result,
         stage2_result=stage2_result,
         stage3_result=stage3_result,
         stage4_result=stage4_result,
+        stage5_result=stage5_result,
     )
 
     return {
@@ -588,6 +667,7 @@ def run(
         "stage2_result": stage2_result,
         "stage3_result": stage3_result,
         "stage4_result": stage4_result,
+        "stage5_result": stage5_result,
     }
 
 
@@ -653,6 +733,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--gradient-min-features-per-case", type=int, default=GRADIENT_MIN_FEATURES_PER_CASE)
     parser.add_argument("--exact-chain-string", type=str, default=EXACT_CHAIN_STRING)
 
+    parser.add_argument("--run-gradient-recurrence", action="store_true", default=RUN_GRADIENT_RECURRENCE)
+    parser.add_argument("--recurrence-min-within-gradient-support", type=int, default=RECURRENCE_MIN_WITHIN_GRADIENT_SUPPORT)
+    parser.add_argument("--recurrence-min-gradients-for-meta", type=int, default=RECURRENCE_MIN_GRADIENTS_FOR_META)
+    parser.add_argument("--no-recurrence-weight-by-score", action="store_true")
+    parser.add_argument("--recurrence-score-column", type=str, default=RECURRENCE_SCORE_COLUMN)
+
     parser.add_argument("--output-dir", type=Path, default=PIPELINE_OUTPUT_DIR)
 
     return parser.parse_args()
@@ -703,17 +789,31 @@ def main() -> None:
         gradient_selected_row=args.gradient_selected_row,
         gradient_min_features_per_case=args.gradient_min_features_per_case,
         exact_chain_string=args.exact_chain_string,
+        run_gradient_recurrence=args.run_gradient_recurrence,
+        recurrence_min_within_gradient_support=args.recurrence_min_within_gradient_support,
+        recurrence_min_gradients_for_meta=args.recurrence_min_gradients_for_meta,
+        recurrence_weight_by_score=not args.no_recurrence_weight_by_score,
+        recurrence_score_column=args.recurrence_score_column,
         pipeline_summary_name=PIPELINE_SUMMARY_NAME,
     )
 
     print("[✓] Feature Zero-Overlap pipeline complete.")
-    print(f"    Input:              {result['input_path']}")
-    print(f"    Output dir:         {result['pipeline_output_dir']}")
-    print(f"    Pipeline summary:   {result['pipeline_summary_txt']}")
-    print(f"    Stage 1 pairs:      {result['stage1_result']['observed_zero_pairs']}")
-    print(f"    Stage 3 rows:       {result['stage3_result']['rows_written']}")
+    print(f"    Input:                    {result['input_path']}")
+    print(f"    Output dir:               {result['pipeline_output_dir']}")
+    print(f"    Pipeline summary:         {result['pipeline_summary_txt']}")
+    print(f"    Stage 1 pairs:            {result['stage1_result']['observed_zero_pairs']}")
+    print(f"    Stage 3 rows:             {result['stage3_result']['rows_written']}")
     if result["stage4_result"] is not None:
-        print(f"    Stage 4 graph:      {result['stage4_result']['bipartite_nodes']} nodes | {result['stage4_result']['bipartite_edges']} edges")
+        print(
+            f"    Stage 4 graph:            "
+            f"{result['stage4_result']['bipartite_nodes']} nodes | {result['stage4_result']['bipartite_edges']} edges"
+        )
+    if result["stage5_result"] is not None:
+        print(
+            f"    Stage 5 recurrence:       "
+            f"{result['stage5_result']['recurring_entities_written']} entities | "
+            f"{result['stage5_result']['corecurrence_edges_written']} co-recurrence edges"
+        )
 
 
 if __name__ == "__main__":

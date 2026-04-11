@@ -1,6 +1,6 @@
 # 03_similarity
 
-Scripts for analyzing **similarity, non-overlap, and gradient structure** within
+Scripts for analyzing **similarity, non-overlap, gradient structure, and recurrent mediating vocabularies** within
 binary incidence datasets.
 
 These tools typically operate on **binary incidence matrices**
@@ -12,7 +12,7 @@ binary incidence datasets. The repository is organized into stages reflecting
 common analytical workflows:
 
 - **similarity analysis** (this folder) identifies patterns of shared, divergent,
-  or indirectly connected feature repertoires
+  absent, or indirectly connected feature repertoires
 - **network construction** builds graphs from those relationships
 - **topological analysis** examines structural properties of those graphs
 
@@ -41,9 +41,10 @@ questions about relationships within binary incidence datasets
 | **Case gradient identification** | Which intermediary cases link otherwise non-overlapping cases within the broader similarity structure? |
 | **Significant zero feature-overlap analysis** | Which pairs of features never co-occur in the same case, and which of those absences are more extreme than expected under a degree-preserving null model? |
 | **Feature gradient identification** | Which intermediary features link otherwise non-co-occurring features within the broader feature-similarity structure? |
+| **Gradient recurrence analysis** | Which mediating tropes or cases recur across many retained gradients, suggesting a stable meta-boundary vocabulary or recurrent bridging set? |
 
 Together, these methods help identify patterns of similarity, divergence,
-absence, and indirect continuity within cultural datasets.
+absence, mediation, and recurrent cross-zone translation within cultural datasets.
 
 ---
 
@@ -88,7 +89,7 @@ The script:
    - cluster assignments for each case and average intra-cluster similarity statistics (CSV)
    - similarity of each case to the mean of its assigned cluster
    - optional dendrogram visualization
-   
+
 This script supports two clustering modes:
 
 - **Fixed number of clusters (`N_CLUSTERS`)**  
@@ -244,7 +245,7 @@ This tool is especially useful for showing how **indirect continuity** can exist
 between cases that appear completely disconnected at the level of direct overlap.
 
 The gradient chains identified here can be visualized as bipartite networks
-using `02_networks/04_build_discourse_gradient_network.py`.
+using `02_networks/04_build_case_gradient_networks.py`.
 
 ---
 
@@ -346,7 +347,49 @@ features across the broader discourse field.
 
 The resulting feature gradients can be visualized using:
 
-02_networks/06_build_feature_gradient_networks.py
+`02_networks/06_build_feature_gradient_networks.py`
+
+---
+
+### 08_gradient_recurrence_analyzer.py
+
+Analyzes **recurrence across retained gradients** in order to identify
+a possible **stable meta-boundary vocabulary** or recurring mediating set.
+
+This script operates downstream of the 05 and 07 find gradient outputs in this folder and asks:
+
+- which mediating elements recur across many retained gradients?
+- which of those recur often enough to suggest a stable cross-zone vocabulary?
+- which mediating elements repeatedly co-occur across gradients?
+
+It supports two modes:
+
+- **case gradient mode**
+  - input gradients are **case gradients**
+  - recurring mediators counted across gradients are **features/tropes**
+
+- **feature gradient mode**
+  - input gradients are **feature gradients**
+  - recurring mediators counted across gradients are **cases**
+
+For each retained gradient row, the script:
+
+1. Parses the gradient chain.
+2. Reconstructs the relevant local subset of the incidence matrix.
+3. Counts mediator support within that gradient.
+4. Retains mediators meeting a configurable minimum within-gradient support threshold.
+5. Aggregates recurrence across all retained gradients.
+6. Builds a co-recurrence edge list showing which mediators repeatedly appear together across gradients.
+
+The script exports:
+
+- `gradient_recurrence_summary.csv` — one row per recurring mediator with recurrence metrics
+- `gradient_recurrence_membership_long.csv` — long-format membership table across gradients
+- `gradient_recurrence_corecurrence_edges.csv` — mediator co-recurrence counts across gradients
+- `analysis_summary.txt` — documentation of settings and results
+
+This tool is useful for testing whether a corpus contains a **stable bridging vocabulary**
+that recurs across many gradients rather than appearing only within a single local chain.
 
 ---
 
@@ -365,12 +408,15 @@ A common case-level workflow is:
 5. Search for **case gradients** linking those endpoints through
    intermediate cases
 6. Build network visualizations of selected gradients in `02_networks`
+7. Analyze **recurrence across retained gradients** to identify possible
+   meta-boundary tropes or recurrent bridging vocabularies
 
 This progression makes it possible to move from:
 
 - broad similarity structure
 - to strong case-level disjunction
 - to indirect pathways of connection within the larger discourse field
+- to recurrent mediating vocabularies that may stabilize cross-zone translation
 
 ### Feature-level workflow
 
@@ -380,13 +426,16 @@ A complementary feature-level workflow is:
 2. Test which zero-overlap feature pairs are **statistically meaningful**
 3. Search for **feature gradients** linking those endpoints through
    intermediary features
+4. Build network visualizations of selected gradients in `02_networks`
+5. Analyze **recurrence across retained gradients** to identify possible
+   recurring mediating cases or recurrent bridging contexts
 
-This progression makes it possible to analyze absence structure along the
+This progression makes it possible to analyze absence and mediation along the
 **feature dimension** of the incidence matrix, complementing the case-level
 analyses above.
 
-Together, these workflows examine absence and mediation along **both axes**
-of the case × feature matrix.
+Together, these workflows examine absence, mediation, and recurrent translation
+along **both axes** of the case × feature matrix.
 
 ---
 
@@ -410,7 +459,9 @@ similarity stages, such as:
 - case × case Jaccard similarity matrices
 - zero-overlap case pair tables with significance fields
 - zero-overlap feature pair tables with significance fields
+- retained case gradient tables
+- retained feature gradient tables
 
 Together, these formats make it possible to analyze patterns of shared,
-divergent, and indirectly connected feature repertoires across both cases
-and features.
+divergent, absent, indirectly connected, and recurrently mediated feature
+repertoires across both cases and features.

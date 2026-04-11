@@ -14,6 +14,7 @@ This toolkit operationalizes the concept of **networked heterodoxy** by modeling
 - **Similarity** (shared feature repertoires)
 - **Absence** (structural disjunction)
 - **Gradients** (mediated pathways across discourse space)
+- **Recurrence** (stable mediation patterns across multiple pathways)
 
 The core data structure is a **binary case × feature incidence matrix**, where:
 
@@ -25,7 +26,8 @@ The toolkit enables researchers to:
 - identify clusters and discourse communities  
 - detect structural disjunctions (zero-overlap regions)  
 - trace mediated pathways across conceptual space  
-- analyze network topology and brokerage structure  
+- analyze network topology and brokerage structure
+- identify recurring mediating vocabularies across gradient pathways and discourse zones    
 
 Scripts are organized **by methodological task rather than dataset**, making them reusable across domains.
 
@@ -117,14 +119,18 @@ These scripts:
 - organize outputs into structured directories  
 - generate summary files documenting each run  
 
+In addition to similarity, absence, and gradient analysis, Pipelines 3 and 4
+optionally include a **gradient recurrence stage**, which aggregates across
+retained gradient chains to identify recurring mediating vocabularies or cases.
+
 ### Pipeline Summary
 
 | Pipeline | Focus |
 |----------|------|
 | **Pipeline 1** | Network construction + topology |
 | **Pipeline 2** | Similarity + clustering |
-| **Pipeline 3** | Case-level absence + gradients |
-| **Pipeline 4** | Feature-level absence + gradients |
+| **Pipeline 3** | Case-level absence + gradients + recurrence |
+| **Pipeline 4** | Feature-level absence + gradients + recurrence |
 
 For details, see:
 
@@ -135,7 +141,7 @@ For details, see:
 
 ## Analytical Logic
 
-The toolkit operates across three complementary analytical layers:
+The toolkit operates across four complementary analytical layers:
 
 ### 1. Similarity
 
@@ -163,6 +169,17 @@ The toolkit operates across three complementary analytical layers:
 - feature gradients  
 
 → reveals **mediated continuity across disjoint regions**
+
+---
+
+### 4. Recurrence
+
+- gradient recurrence analysis  
+- recurring mediating features  
+- recurring mediating cases  
+- co-recurrence structure across gradients  
+
+→ reveals **stable cross-gradient mediation patterns**
 
 ---
 
@@ -515,6 +532,35 @@ Example:
 Ancient Astronauts ↔ Zecharia Sitchin ↔ Mesopotamian Religion
 
 Intermediate features create conceptual bridges across otherwise separate discourse clusters.
+
+### Gradient Recurrence
+
+A higher-order analytical process that examines patterns across multiple
+gradient chains to identify elements that recur as mediators.
+
+Rather than analyzing a single gradient, recurrence analysis aggregates across
+many gradients to identify:
+
+- frequently reused mediating features  
+- frequently reused mediating cases  
+- co-recurrent mediator sets  
+
+Gradient recurrence helps identify whether a discourse space contains a
+**stable meta-boundary vocabulary** that facilitates cross-domain translation.
+
+### Meta-Boundary Vocabulary
+
+A set of features (or cases) that repeatedly appear as mediators across
+multiple gradients, linking otherwise disjoint regions of a discourse space.
+
+These elements function as:
+
+- highly translatable concepts  
+- cross-domain connectors  
+- structurally central mediation resources  
+
+They often represent the most general, widely recognizable, or easily
+adaptable elements within a heterogeneous discourse field.
 
 ---
 
@@ -1054,4 +1100,3 @@ Gephi provides:
 - flexible visualization across different thresholded networks  
 
 It is an essential companion tool for interpreting the outputs of this repository.
-

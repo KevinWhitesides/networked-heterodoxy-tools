@@ -39,7 +39,7 @@ Different workflows combine these components in different orders.
   - feature absence networks
   - gradient networks
 - Network construction may occur **early or late**, depending on the workflow
-  - e.g. zero-overlap and gradient identification networks use 03_similarity metrics
+  - e.g. zero-overlap and gradient identification networks use 03_similarity outputs
 
 ### 03_similarity
 - Direct comparison of cases or features without constructing a network
@@ -48,6 +48,7 @@ Different workflows combine these components in different orders.
   - clustering
   - zero-overlap detection
   - gradient identification
+  - gradient recurrence analysis
 
 ### 04_topology
 - Structural analysis of networks
@@ -74,21 +75,68 @@ Examples include:
 2. Network construction (02_networks → projection)
 3. Topological analysis (04_topology)
 
+---
+
 ### Jaccard Similarity → Clustering Workflow
 1. Similarity computation (03_similarity)
 2. Clustering (03_similarity)
 
+---
+
 ### Case Zero-Overlap → Gradient Workflow
-1. Zero-overlap detection (03_similarity)
-2. Significance testing (03_similarity)
-3. Gradient identification (03_similarity)
-4. (Optional) network construction (02_networks → gradient networks)
+
+1. Zero-overlap detection (03_similarity)  
+2. Significance testing (03_similarity)  
+3. Gradient identification (03_similarity)  
+4. (Optional) network construction (02_networks → gradient networks)  
+5. (Optional) **gradient recurrence analysis (03_similarity)**  
+
+This workflow moves from:
+
+- **direct similarity**
+→ to **complete disjunction**
+→ to **indirect continuity (gradients)**
+→ to **recurrent mediating vocabularies across gradients**
+
+---
 
 ### Feature Zero-Overlap → Gradient Workflow
-1. Zero-overlap detection (03_similarity)
-2. Significance testing (03_similarity)
-3. Gradient identification (03_similarity)
-4. (Optional) network construction (02_networks → gradient networks)
+
+1. Zero-overlap detection (03_similarity)  
+2. Significance testing (03_similarity)  
+3. Gradient identification (03_similarity)  
+4. (Optional) network construction (02_networks → gradient networks)  
+5. (Optional) **gradient recurrence analysis (03_similarity)**  
+
+This workflow mirrors the case-level analysis along the **feature dimension**, allowing
+identification of:
+
+- feature disjunctions
+- intermediary feature pathways
+- recurrent mediating **cases** across gradients
+
+---
+
+## Gradient Recurrence as an Analytical Layer
+
+Gradient recurrence analysis is a **post-gradient step** that aggregates across
+many retained gradients to identify:
+
+- recurring mediators (features or cases)
+- co-recurrent mediator sets
+- potential **meta-boundary vocabularies**
+
+Conceptually, it shifts analysis from:
+
+- **single gradient chains (local structure)**  
+to  
+- **recurring mediation patterns across the corpus (global structure)**  
+
+This step is optional because:
+
+- it requires sufficient gradient density to be meaningful
+- it is more interpretive than structural
+- it aggregates across results rather than producing primary relationships
 
 ---
 
@@ -102,9 +150,10 @@ the next.
 
 For example:
 
-- Jaccard similarity → clustering
-- zero-overlap detection → gradient search → network construction
-- projection networks → topological analysis
+- Jaccard similarity → clustering  
+- zero-overlap detection → gradient search → recurrence analysis  
+- zero-overlap detection → gradient search → network construction  
+- projection networks → topological analysis  
 
 ---
 
@@ -114,13 +163,14 @@ Some steps that require user decisions within a workflow are intentionally **not
 
 - Parameter diagnostics (e.g., threshold selection)
 - Interpretive decisions (e.g., selecting specific endpoints for gradients)
+- Selection of which gradients to visualize or emphasize
 
 These steps are performed manually before or after running a pipeline,
 ensuring that pipelines remain:
 
-- reproducible
-- deterministic
-- non-interactive following initial parameter setting
+- reproducible  
+- deterministic  
+- non-interactive following initial parameter setting  
 
 ---
 
@@ -135,6 +185,6 @@ showing how specific pipelines are defined within the overall structure.
 
 See that directory for:
 
-- available pipelines
-- execution instructions
-- expected inputs and outputs
+- available pipelines  
+- execution instructions  
+- expected inputs and outputs  

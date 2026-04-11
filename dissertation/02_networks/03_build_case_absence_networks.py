@@ -158,7 +158,7 @@ def run(
         G_bip.add_node(f"case::{t}", label=label_map[t], type="case")
 
     for trope in keep_tropes:
-        G_bip.add_node(f"trope::{trope}", type="trope")
+        G_bip.add_node(f"trope::{trope}", label=trope, type="trope")
 
     for _, row in retained_df.iterrows():
         for trope in keep_tropes:
@@ -180,6 +180,10 @@ def run(
         "bipartite_gexf": str(bip_path),
         "summary_txt": str(summary_path),
         "cases_retained": len(keep_cases),
+        "absence_graph_nodes": G_abs.number_of_nodes(),
+        "absence_graph_edges": G_abs.number_of_edges(),
+        "bipartite_graph_nodes": G_bip.number_of_nodes(),
+        "bipartite_graph_edges": G_bip.number_of_edges(),
     }
 
 
