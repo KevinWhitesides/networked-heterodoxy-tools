@@ -3,7 +3,7 @@
 08_gradient_recurrence_analyzer.py
 
 Analyze recurrence across retained gradients to identify a possible
-"meta-boundary vocabulary" (or, in feature-gradient mode, a recurring
+meta-boundary vocabulary (or, in feature-gradient mode, a recurring
 mediating case set).
 
 Supports two modes:
@@ -11,31 +11,33 @@ Supports two modes:
 1) case
    - Input gradients are case gradients (from 05_find_case_gradients.py)
    - Chain members are CASES
-   - Mediators counted across gradients are FEATURES
+   - Items counted across gradients are FEATURES
 
 2) feature
    - Input gradients are feature gradients (from 07_find_feature_gradients.py)
    - Chain members are FEATURES
-   - Mediators counted across gradients are CASES
+   - Items counted across gradients are CASES
 
 Main idea
 ---------
 For each retained gradient row:
 - reconstruct the ordered chain
-- derive the set of mediators relevant to that chain
-- retain only mediators that meet a minimum within-gradient support threshold
+- derive the set of relevant items for that chain
+- retain only items that meet a minimum within-gradient support threshold
 - aggregate recurrence across all gradients
+- build a co-recurrence network among retained items
 
 Outputs
 -------
 1) gradient_recurrence_summary.csv
-   One row per mediator with recurrence metrics across gradients
+   One row per recurring item with recurrence metrics across gradients
 
 2) gradient_recurrence_membership_long.csv
-   One row per (gradient, mediator) membership
+   One row per (gradient, item) membership
 
-3) gradient_recurrence_corecurrence_edges.csv
-   Pairwise co-recurrence counts of mediators across gradients
+3) gradient_recurrence_network.gexf
+   Co-recurrence network of retained items, with node attributes copied
+   from the summary table and edge weights based on shared gradient count
 
 4) analysis_summary.txt
    Human-readable summary
@@ -43,10 +45,10 @@ Outputs
 Notes
 -----
 - This script does NOT require Stage 4 GEXFs.
-- It works directly from Stage 3 gradients CSV + the original incidence matrix.
-- For case gradients, the resulting "mediators" are features/tropes.
-- For feature gradients, the resulting "mediators" are cases.
-
+- It works directly from a Stage 3 gradients CSV plus the original
+  binary incidence matrix.
+- In case-gradient mode, recurring items are features/tropes.
+- In feature-gradient mode, recurring items are cases.
 """
 
 from __future__ import annotations
@@ -56,8 +58,9 @@ import itertools
 from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+import networkx as nx
 import numpy as np
 import pandas as pd
 
@@ -79,7 +82,7 @@ CASE_ID_COLUMN = "Source Title"
 N_METADATA_COLS = 4
 PRESENCE_TOKEN = "X"
 
-# For optional producer-aware summaries (used only if present)
+# Optional producer column (used only if present and relevant later)
 PRODUCER_COL: Optional[str] = None
 
 # Recurrence logic
@@ -94,7 +97,7 @@ SCORE_COLUMN = "total_score"
 OUTPUT_DIR = Path(".")
 OUT_SUMMARY_CSV = "gradient_recurrence_summary.csv"
 OUT_MEMBERSHIP_LONG_CSV = "gradient_recurrence_membership_long.csv"
-OUT_CORECURRENCE_EDGES_CSV = "gradient_recurrence_corecurrence_edges.csv"
+OUT_NETWORK_GEXF = "gradient_recurrence_network.gexf"
 OUT_SUMMARY = "analysis_summary.txt"
 
 
@@ -153,9 +156,8 @@ def _binarize_presence(df: pd.DataFrame, feature_cols: Sequence[str], token: str
 
 def _parse_chain_string(chain_str: str) -> List[str]:
     """
-    Stage 3 case gradients use pipe-delimited chains:
+    Stage 3 gradients use pipe-delimited chains, e.g.:
         A | B | C | E
-    We assume the feature-gradient script follows the same convention.
     """
     if pd.isna(chain_str):
         return []
@@ -167,14 +169,12 @@ def _infer_endpoint_columns(df: pd.DataFrame, gradient_kind: str) -> Tuple[str, 
     """
     Infer endpoint columns from the gradient CSV.
     """
-    if gradient_kind == "case":
-        if {"case_A", "case_E"}.issubset(df.columns):
-            return "case_A", "case_E"
-    elif gradient_kind == "feature":
-        if {"feature_A", "feature_E"}.issubset(df.columns):
-            return "feature_A", "feature_E"
+    if gradient_kind == "case" and {"case_A", "case_E"}.issubset(df.columns):
+        return "case_A", "case_E"
 
-    # Fallbacks
+    if gradient_kind == "feature" and {"feature_A", "feature_E"}.issubset(df.columns):
+        return "feature_A", "feature_E"
+
     candidates = [
         ("case_A", "case_E"),
         ("feature_A", "feature_E"),
@@ -198,7 +198,7 @@ def _make_gradient_id(row: pd.Series, a_col: str, e_col: str) -> str:
 
 
 # =============================================================================
-# CORE ANALYSIS
+# CORE ANALYSIS HELPERS
 # =============================================================================
 
 def _prepare_incidence(
@@ -259,7 +259,7 @@ def _analyze_case_gradient_row(
     """
     Case-gradient mode:
     - chain members are CASES
-    - mediators are FEATURES
+    - items are FEATURES
     """
     missing_cases = [c for c in chain_cases if c not in bin_df.index]
     if missing_cases:
@@ -269,16 +269,16 @@ def _analyze_case_gradient_row(
 
     sub = bin_df.loc[chain_cases].copy()
 
-    feature_counts = Counter(sub.sum(axis=0).astype(int).to_dict())
-    feature_counts = Counter({feat: cnt for feat, cnt in feature_counts.items() if cnt > 0})
+    item_counts = Counter(sub.sum(axis=0).astype(int).to_dict())
+    item_counts = Counter({item: cnt for item, cnt in item_counts.items() if cnt > 0})
 
-    retained = sorted(
-        feat for feat, cnt in feature_counts.items()
+    retained_items = sorted(
+        item for item, cnt in item_counts.items()
         if cnt >= min_within_gradient_support
     )
 
-    retained_counts = {feat: int(feature_counts[feat]) for feat in retained}
-    return feature_counts, retained_counts, retained
+    retained_counts = {item: int(item_counts[item]) for item in retained_items}
+    return item_counts, retained_counts, retained_items
 
 
 def _analyze_feature_gradient_row(
@@ -291,7 +291,7 @@ def _analyze_feature_gradient_row(
     """
     Feature-gradient mode:
     - chain members are FEATURES
-    - mediators are CASES
+    - items are CASES
     A case is retained if it contains at least MIN_WITHIN_GRADIENT_SUPPORT
     of the chain's features.
     """
@@ -304,23 +304,70 @@ def _analyze_feature_gradient_row(
     sub = bin_df[chain_features].copy()
     case_feature_counts = sub.sum(axis=1).astype(int)
 
-    case_counts = Counter(case_feature_counts.to_dict())
-    case_counts = Counter({case: cnt for case, cnt in case_counts.items() if cnt > 0})
+    item_counts = Counter(case_feature_counts.to_dict())
+    item_counts = Counter({item: cnt for item, cnt in item_counts.items() if cnt > 0})
 
-    retained_cases = sorted(
-        case for case, cnt in case_counts.items()
+    retained_items = sorted(
+        item for item, cnt in item_counts.items()
         if cnt >= min_within_gradient_support
     )
 
-    retained_counts = {case: int(case_counts[case]) for case in retained_cases}
+    retained_counts = {item: int(item_counts[item]) for item in retained_items}
 
     producer_counts: Dict[str, int] = {}
-    if producer_map is not None and retained_cases:
-        producers = producer_map.reindex(retained_cases).dropna().astype(str)
+    if producer_map is not None and retained_items:
+        producers = producer_map.reindex(retained_items).dropna().astype(str)
         producer_counts = producers.value_counts().to_dict()
 
-    return case_counts, retained_counts, retained_cases, producer_counts
+    return item_counts, retained_counts, retained_items, producer_counts
 
+
+def _build_corecurrence_graph(
+    item_summary_df: pd.DataFrame,
+    co_counts: Dict[Tuple[str, str], int],
+    *,
+    min_gradients_for_meta: int,
+) -> nx.Graph:
+    """
+    Build an undirected weighted co-recurrence graph.
+
+    Nodes:
+        - item
+        - item_type
+        - summary metrics from item_summary_df
+
+    Edges:
+        - weight = shared_gradients
+        - shared_gradients = shared_gradients
+    """
+    G = nx.Graph()
+
+    # Add nodes with summary attributes
+    if not item_summary_df.empty:
+        for _, row in item_summary_df.iterrows():
+            item = str(row["item"])
+            attrs = row.to_dict()
+            attrs.pop("item", None)
+            for k, v in list(attrs.items()):
+                if pd.isna(v):
+                    attrs[k] = ""
+                elif isinstance(v, (np.integer,)):
+                    attrs[k] = int(v)
+                elif isinstance(v, (np.floating,)):
+                    attrs[k] = float(v)
+            G.add_node(item, **attrs)
+
+    # Add weighted edges
+    for (a, b), cnt in co_counts.items():
+        if cnt >= min_gradients_for_meta:
+            G.add_edge(a, b, weight=int(cnt), shared_gradients=int(cnt))
+
+    return G
+
+
+# =============================================================================
+# MAIN RUN
+# =============================================================================
 
 def run(
     *,
@@ -339,7 +386,7 @@ def run(
     score_column: str = "total_score",
     out_summary_csv: str = "gradient_recurrence_summary.csv",
     out_membership_long_csv: str = "gradient_recurrence_membership_long.csv",
-    out_corecurrence_edges_csv: str = "gradient_recurrence_corecurrence_edges.csv",
+    out_network_gexf: str = "gradient_recurrence_network.gexf",
     out_summary_name: str = "analysis_summary.txt",
 ) -> Dict[str, Any]:
     """
@@ -354,7 +401,6 @@ def run(
         raise ValueError("min_within_gradient_support must be >= 1.")
     if min_gradients_for_meta < 1:
         raise ValueError("min_gradients_for_meta must be >= 1.")
-
     if not gradients_csv.exists():
         raise FileNotFoundError(f"Gradients CSV not found: {gradients_csv}")
 
@@ -376,9 +422,10 @@ def run(
     )
 
     membership_rows: List[Dict[str, Any]] = []
-    summary_rows: List[Dict[str, Any]] = []
+    gradient_summary_rows: List[Dict[str, Any]] = []
+    gradient_to_retained_items: Dict[str, List[str]] = {}
 
-    gradient_to_retained_mediators: Dict[str, List[str]] = {}
+    item_type = "feature" if gradient_kind == "case" else "case"
 
     for row_idx, row in grad_df.iterrows():
         gradient_id = _make_gradient_id(row, a_col, e_col)
@@ -390,59 +437,39 @@ def run(
         score_weight = gradient_score if weight_by_score and pd.notna(gradient_score) else 1.0
 
         if gradient_kind == "case":
-            full_counts, retained_counts, retained = _analyze_case_gradient_row(
+            full_counts, retained_counts, retained_items = _analyze_case_gradient_row(
                 chain,
                 bin_df=bin_df,
                 min_within_gradient_support=min_within_gradient_support,
             )
-            mediator_type = "feature"
-
-            for mediator, cnt in full_counts.items():
-                membership_rows.append({
-                    "gradient_id": gradient_id,
-                    "gradient_row": int(row_idx),
-                    "gradient_kind": gradient_kind,
-                    "endpoint_A": str(row[a_col]),
-                    "endpoint_E": str(row[e_col]),
-                    "chain_length": len(chain),
-                    "chain": " | ".join(chain),
-                    "mediating_entity": mediator,
-                    "mediating_entity_type": mediator_type,
-                    "within_gradient_support": int(cnt),
-                    "retained_by_threshold": mediator in retained_counts,
-                    "gradient_score": gradient_score,
-                    "score_weight": score_weight,
-                })
-
         else:
-            full_counts, retained_counts, retained, producer_counts = _analyze_feature_gradient_row(
+            full_counts, retained_counts, retained_items, _producer_counts = _analyze_feature_gradient_row(
                 chain,
                 bin_df=bin_df,
                 min_within_gradient_support=min_within_gradient_support,
                 producer_map=producer_map,
             )
-            mediator_type = "case"
 
-            for mediator, cnt in full_counts.items():
-                membership_rows.append({
-                    "gradient_id": gradient_id,
-                    "gradient_row": int(row_idx),
-                    "gradient_kind": gradient_kind,
-                    "endpoint_A": str(row[a_col]),
-                    "endpoint_E": str(row[e_col]),
-                    "chain_length": len(chain),
-                    "chain": " | ".join(chain),
-                    "mediating_entity": mediator,
-                    "mediating_entity_type": mediator_type,
-                    "within_gradient_support": int(cnt),
-                    "retained_by_threshold": mediator in retained_counts,
-                    "gradient_score": gradient_score,
-                    "score_weight": score_weight,
-                })
+        for item, cnt in full_counts.items():
+            membership_rows.append({
+                "gradient_id": gradient_id,
+                "gradient_row": int(row_idx),
+                "gradient_kind": gradient_kind,
+                "endpoint_A": str(row[a_col]),
+                "endpoint_E": str(row[e_col]),
+                "chain_length": len(chain),
+                "chain": " | ".join(chain),
+                "item": item,
+                "item_type": item_type,
+                "within_gradient_support": int(cnt),
+                "retained_by_threshold": item in retained_counts,
+                "gradient_score": gradient_score,
+                "score_weight": score_weight,
+            })
 
-        gradient_to_retained_mediators[gradient_id] = list(retained)
+        gradient_to_retained_items[gradient_id] = list(retained_items)
 
-        summary_rows.append({
+        gradient_summary_rows.append({
             "gradient_id": gradient_id,
             "gradient_row": int(row_idx),
             "gradient_kind": gradient_kind,
@@ -450,8 +477,8 @@ def run(
             "endpoint_E": str(row[e_col]),
             "chain_length": len(chain),
             "chain": " | ".join(chain),
-            "n_mediators_present": len(full_counts),
-            "n_mediators_retained": len(retained),
+            "n_items_present": len(full_counts),
+            "n_items_retained": len(retained_items),
             "gradient_score": gradient_score,
             "score_weight": score_weight,
         })
@@ -460,38 +487,36 @@ def run(
         raise ValueError("No valid gradients could be analyzed from the supplied CSV.")
 
     membership_df = pd.DataFrame(membership_rows)
-    gradient_summary_df = pd.DataFrame(summary_rows)
+    gradient_summary_df = pd.DataFrame(gradient_summary_rows)
 
     # -------------------------------------------------------------------------
-    # Aggregate mediator recurrence
+    # Aggregate item recurrence
     # -------------------------------------------------------------------------
     retained_membership_df = membership_df[membership_df["retained_by_threshold"]].copy()
+    total_gradients = int(gradient_summary_df["gradient_id"].nunique())
 
-    # gradient-level recurrence counts
-    gradients_per_mediator = (
-        retained_membership_df.groupby("mediating_entity")["gradient_id"]
+    gradients_per_item = (
+        retained_membership_df.groupby("item")["gradient_id"]
         .nunique()
         .rename("n_gradients_retained")
     )
 
-    total_gradients = int(gradient_summary_df["gradient_id"].nunique())
-
-    pct_gradients = (gradients_per_mediator / total_gradients).rename("pct_gradients_retained")
+    pct_gradients = (gradients_per_item / total_gradients).rename("pct_gradients_retained")
 
     mean_support = (
-        retained_membership_df.groupby("mediating_entity")["within_gradient_support"]
+        retained_membership_df.groupby("item")["within_gradient_support"]
         .mean()
         .rename("mean_within_gradient_support")
     )
 
     median_support = (
-        retained_membership_df.groupby("mediating_entity")["within_gradient_support"]
+        retained_membership_df.groupby("item")["within_gradient_support"]
         .median()
         .rename("median_within_gradient_support")
     )
 
     weighted_score_sum = (
-        retained_membership_df.groupby("mediating_entity")["score_weight"]
+        retained_membership_df.groupby("item")["score_weight"]
         .sum()
         .rename("weighted_gradient_score_sum")
     )
@@ -500,14 +525,14 @@ def run(
         retained_membership_df.assign(
             endpoint_pair=lambda d: d["endpoint_A"].astype(str) + " || " + d["endpoint_E"].astype(str)
         )
-        .groupby("mediating_entity")["endpoint_pair"]
+        .groupby("item")["endpoint_pair"]
         .nunique()
         .rename("n_endpoint_pairs_spanned")
     )
 
-    mediator_summary_df = pd.concat(
+    item_summary_df = pd.concat(
         [
-            gradients_per_mediator,
+            gradients_per_item,
             pct_gradients,
             mean_support,
             median_support,
@@ -515,60 +540,59 @@ def run(
             endpoint_pair_count,
         ],
         axis=1,
-    ).reset_index().rename(columns={"mediating_entity": "entity"})
+    ).reset_index()
 
-    mediator_summary_df["entity_type"] = (
-        "feature" if gradient_kind == "case" else "case"
-    )
+    item_summary_df["item_type"] = item_type
 
-    mediator_summary_df = mediator_summary_df[
-        mediator_summary_df["n_gradients_retained"] >= min_gradients_for_meta
+    item_summary_df = item_summary_df[
+        item_summary_df["n_gradients_retained"] >= min_gradients_for_meta
     ].copy()
 
-    mediator_summary_df = mediator_summary_df.sort_values(
-        by=["n_gradients_retained", "weighted_gradient_score_sum", "mean_within_gradient_support", "entity"],
+    item_summary_df = item_summary_df.sort_values(
+        by=["n_gradients_retained", "weighted_gradient_score_sum", "mean_within_gradient_support", "item"],
         ascending=[False, False, False, True],
     ).reset_index(drop=True)
 
     # -------------------------------------------------------------------------
-    # Co-recurrence edges
+    # Build co-recurrence counts among retained items
     # -------------------------------------------------------------------------
     co_counts: Dict[Tuple[str, str], int] = defaultdict(int)
 
     for _, g_row in gradient_summary_df.iterrows():
         gid = g_row["gradient_id"]
-        mediators = sorted(set(gradient_to_retained_mediators.get(gid, [])))
-        for a, b in itertools.combinations(mediators, 2):
-            co_counts[(a, b)] += 1
+        items = sorted(set(gradient_to_retained_items.get(gid, [])))
 
-    edge_rows = [
-        {"entity_a": a, "entity_b": b, "shared_gradients": cnt}
-        for (a, b), cnt in co_counts.items()
-        if cnt >= min_gradients_for_meta
-    ]
-    edges_df = pd.DataFrame(edge_rows)
-    if not edges_df.empty:
-        edges_df = edges_df.sort_values(
-            by=["shared_gradients", "entity_a", "entity_b"],
-            ascending=[False, True, True],
-        ).reset_index(drop=True)
+        # Only count item pairs that survive the global recurrence threshold later
+        # is NOT enforced here; we count first, then filter in graph construction.
+        for a, b in itertools.combinations(items, 2):
+            co_counts[(a, b)] += 1
 
     # -------------------------------------------------------------------------
     # Write outputs
     # -------------------------------------------------------------------------
     summary_csv_path = output_dir / out_summary_csv
     membership_csv_path = output_dir / out_membership_long_csv
-    edges_csv_path = output_dir / out_corecurrence_edges_csv
+    network_gexf_path = output_dir / out_network_gexf
     summary_txt_path = output_dir / out_summary_name
 
-    mediator_summary_df.to_csv(summary_csv_path, index=False, encoding="utf-8")
+    item_summary_df.to_csv(summary_csv_path, index=False, encoding="utf-8")
     membership_df.to_csv(membership_csv_path, index=False, encoding="utf-8")
-    if edges_df.empty:
-        pd.DataFrame(columns=["entity_a", "entity_b", "shared_gradients"]).to_csv(
-            edges_csv_path, index=False, encoding="utf-8"
-        )
-    else:
-        edges_df.to_csv(edges_csv_path, index=False, encoding="utf-8")
+
+    # Build network only from items that survive global summary filtering
+    surviving_items = set(item_summary_df["item"].astype(str))
+    filtered_co_counts = {
+        (a, b): cnt
+        for (a, b), cnt in co_counts.items()
+        if a in surviving_items and b in surviving_items and cnt >= min_gradients_for_meta
+    }
+
+    G = _build_corecurrence_graph(
+        item_summary_df,
+        filtered_co_counts,
+        min_gradients_for_meta=min_gradients_for_meta,
+    )
+
+    nx.write_gexf(G, network_gexf_path)
 
     with open(summary_txt_path, "w", encoding="utf-8") as f:
         f.write("=== Gradient Recurrence Analyzer Summary ===\n\n")
@@ -596,19 +620,20 @@ def run(
         f.write("-----------\n")
         f.write(f"Total gradients analyzed: {total_gradients}\n")
         f.write(f"Total gradient-membership rows: {len(membership_df)}\n")
-        f.write(f"Retained recurring entities written: {len(mediator_summary_df)}\n")
-        f.write(f"Co-recurrence edges written: {0 if edges_df.empty else len(edges_df)}\n\n")
+        f.write(f"Recurring items written: {len(item_summary_df)}\n")
+        f.write(f"Co-recurrence graph nodes: {G.number_of_nodes()}\n")
+        f.write(f"Co-recurrence graph edges: {G.number_of_edges()}\n\n")
 
         f.write("Interpretation\n")
         f.write("--------------\n")
         if gradient_kind == "case":
             f.write(
-                "In case-gradient mode, recurring entities are features/tropes that recur across\n"
+                "In case-gradient mode, recurring items are features/tropes that recur across\n"
                 "multiple retained case gradients. These are candidate meta-boundary tropes.\n\n"
             )
         else:
             f.write(
-                "In feature-gradient mode, recurring entities are cases that recur across\n"
+                "In feature-gradient mode, recurring items are cases that recur across\n"
                 "multiple retained feature gradients. These are candidate meta-boundary cases.\n\n"
             )
 
@@ -616,7 +641,7 @@ def run(
         f.write("------------\n")
         f.write(f"{out_summary_csv}\n")
         f.write(f"{out_membership_long_csv}\n")
-        f.write(f"{out_corecurrence_edges_csv}\n")
+        f.write(f"{out_network_gexf}\n")
         f.write(f"{out_summary_name}\n")
 
     return {
@@ -624,11 +649,12 @@ def run(
         "output_dir": str(output_dir),
         "summary_csv": str(summary_csv_path),
         "membership_long_csv": str(membership_csv_path),
-        "corecurrence_edges_csv": str(edges_csv_path),
+        "network_gexf": str(network_gexf_path),
         "summary_txt": str(summary_txt_path),
         "total_gradients": total_gradients,
-        "recurring_entities_written": int(len(mediator_summary_df)),
-        "corecurrence_edges_written": 0 if edges_df.empty else int(len(edges_df)),
+        "recurring_items_written": int(len(item_summary_df)),
+        "corecurrence_graph_nodes": int(G.number_of_nodes()),
+        "corecurrence_graph_edges": int(G.number_of_edges()),
     }
 
 
@@ -659,7 +685,7 @@ def _parse_args() -> argparse.Namespace:
 
     parser.add_argument("--out-summary-csv", type=str, default=OUT_SUMMARY_CSV)
     parser.add_argument("--out-membership-long-csv", type=str, default=OUT_MEMBERSHIP_LONG_CSV)
-    parser.add_argument("--out-corecurrence-edges-csv", type=str, default=OUT_CORECURRENCE_EDGES_CSV)
+    parser.add_argument("--out-network-gexf", type=str, default=OUT_NETWORK_GEXF)
     parser.add_argument("--out-summary", type=str, default=OUT_SUMMARY)
 
     return parser.parse_args()
@@ -686,17 +712,20 @@ def main() -> None:
         score_column=args.score_column,
         out_summary_csv=args.out_summary_csv,
         out_membership_long_csv=args.out_membership_long_csv,
-        out_corecurrence_edges_csv=args.out_corecurrence_edges_csv,
+        out_network_gexf=args.out_network_gexf,
         out_summary_name=args.out_summary,
     )
 
     print("[✓] Gradient recurrence analysis complete.")
     print(f"    Total gradients analyzed:      {result['total_gradients']}")
-    print(f"    Recurring entities written:    {result['recurring_entities_written']}")
-    print(f"    Co-recurrence edges written:   {result['corecurrence_edges_written']}")
+    print(f"    Recurring items written:       {result['recurring_items_written']}")
+    print(
+        f"    Co-recurrence graph:           "
+        f"{result['corecurrence_graph_nodes']} nodes | {result['corecurrence_graph_edges']} edges"
+    )
     print(f"    Summary CSV:                   {result['summary_csv']}")
     print(f"    Membership CSV:                {result['membership_long_csv']}")
-    print(f"    Co-recurrence edges CSV:       {result['corecurrence_edges_csv']}")
+    print(f"    Network GEXF:                 {result['network_gexf']}")
     print(f"    Summary TXT:                   {result['summary_txt']}")
 
 

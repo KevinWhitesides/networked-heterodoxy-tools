@@ -296,8 +296,9 @@ def _write_pipeline_summary(
             f.write(f"Gradient network nodes: {stage4_result['graph_nodes']}\n")
             f.write(f"Gradient network edges: {stage4_result['graph_edges']}\n")
         if stage5_result is not None:
-            f.write(f"Recurring entities written: {stage5_result['recurring_entities_written']}\n")
-            f.write(f"Co-recurrence edges written: {stage5_result['corecurrence_edges_written']}\n")
+            f.write(f"Recurring items written: {stage5_result['recurring_items_written']}\n")
+            f.write(f"Co-recurrence graph nodes: {stage5_result['corecurrence_graph_nodes']}\n")
+            f.write(f"Co-recurrence graph edges: {stage5_result['corecurrence_graph_edges']}\n")
 
 
 # =============================================================================
@@ -572,7 +573,7 @@ def run(
             score_column=recurrence_score_column,
             out_summary_csv="gradient_recurrence_summary.csv",
             out_membership_long_csv="gradient_recurrence_membership_long.csv",
-            out_corecurrence_edges_csv="gradient_recurrence_corecurrence_edges.csv",
+            out_network_gexf="gradient_recurrence_network.gexf",
             out_summary_name="analysis_summary.txt",
         )
 

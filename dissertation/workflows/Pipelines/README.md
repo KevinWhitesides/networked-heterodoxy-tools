@@ -432,6 +432,114 @@ The pipeline will:
 
 ---
 
+## Visualizing Gradient Recurrence Distributions (Recommended Diagnostic)
+
+After running the gradient recurrence stage (Pipeline 3 or 4), users may find it helpful to visualize the distribution of recurrence scores across all items. This provides a quick, intuitive way to understand the overall structure of mediation in the dataset.
+
+In this section, “items” refers to:
+- **features** in Pipeline 3 (case gradients)  
+- **cases** in Pipeline 4 (feature gradients)  
+
+---
+
+### Purpose
+
+This chart helps answer:
+
+- Is there a **shared core mediation vocabulary**?
+- How sharply do items differ in their mediation capacity?
+- Does the system exhibit a **core–periphery structure**, a smooth gradient, or weak differentiation?
+
+Rather than focusing on individual items, this visualization reveals the **shape of the recurrence distribution** across the entire dataset.
+
+---
+
+### How to Create the Chart (Excel)
+
+Using the `gradient_recurrence_summary.csv` file:
+
+1. **Sort the data**
+   - Sort by `weighted_gradient_score_sum` in descending order.
+
+2. **Create a rank column**
+   - Add a new column called `rank`
+   - In the first row of data (e.g., row 2), enter:
+     ```
+     =ROW()-1
+     ```
+   - Drag down to assign ranks (1, 2, 3, …)
+
+3. **Insert a scatter plot**
+   - Select:
+     - `rank` (X-axis)
+     - `weighted_gradient_score_sum` (Y-axis)
+   - Insert → Scatter Plot (with lines optional)
+
+4. **Apply logarithmic scaling (recommended)**
+   - Right-click the X-axis → Format Axis → check *Logarithmic scale*
+   - Right-click the Y-axis → Format Axis → check *Logarithmic scale*
+
+---
+
+### How to Interpret the Plot
+
+Typical patterns include:
+
+#### 1. Flat plateau at the top
+A group of items with nearly identical, maximal scores.
+
+→ Indicates a **shared core of highly translatable mediators**  
+→ These often function as cross-domain “bridge” concepts  
+
+#### 2. Gradual downward slope
+Items with decreasing but still significant recurrence.
+
+→ Represents **graded mediation capacity**  
+→ These items can mediate across domains, but less consistently  
+
+#### 3. Long tail
+A large number of low-scoring items.
+
+→ Indicates **local or domain-specific vocabulary**  
+→ These are less reusable across gradients  
+
+---
+
+### Conceptual Interpretation
+
+This distribution often reveals a **core–periphery structure**:
+
+- **Core mediators**  
+  → appear across many gradients  
+  → support cross-domain translation  
+  → function as a shared mediation vocabulary  
+
+- **Peripheral mediators**  
+  → appear in fewer gradients  
+  → are more domain-specific  
+  → require greater contextual alignment  
+
+In many datasets, this reflects a distinction between:
+
+- broadly recognizable, easily translatable concepts  
+- specialized, locally meaningful discourse elements  
+
+---
+
+### Notes
+
+- The full dataset provides the most accurate view of the distribution  
+- In practice, users may plot the top N rows (e.g., 100–300) for readability  
+- Truncating the dataset primarily removes the long tail and does not typically affect the structure of the upper distribution  
+
+- Interpretation typically focuses on:
+  - the **top-ranked items**
+  - the **shape of the distribution**, not the total count  
+
+This visualization serves as a **diagnostic and interpretive bridge**, linking the raw recurrence outputs to higher-level insights about mediation, translation, and discourse structure.
+
+---
+
 # Pipeline 4: Zero-Overlap Feature Suite
 
 ## Purpose
@@ -601,6 +709,12 @@ The pipeline will:
   - feature-space transitions
   - support patterns across cases
 - The recurrence stage identifies **cases that repeatedly bridge feature regions**
+
+For guidance on visualizing and interpreting gradient recurrence distributions,
+see the “Visualizing Gradient Recurrence Distributions” section in Pipeline 3.
+
+The same procedure applies here, with cases (rather than features) as the
+recurring items.
 
 ---
 
